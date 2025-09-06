@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.READ_SMS"/>
 
     <application
-        android:label="upi_expense_tracker"
+        android:label="Xpense"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

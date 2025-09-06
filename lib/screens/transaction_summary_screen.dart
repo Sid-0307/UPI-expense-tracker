@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:upi_expense_tracker/models/transaction.dart';
+import 'package:upi_expense_tracker/main.dart';
 import 'package:upi_expense_tracker/utils/date_formatter.dart';
 import 'package:upi_expense_tracker/widgets/daily_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/merchant_chart.dart';
@@ -9,6 +10,13 @@ import 'package:upi_expense_tracker/widgets/date_range_selector.dart';
 import 'package:upi_expense_tracker/widgets/frequent_merchant_list.dart';
 import 'package:upi_expense_tracker/widgets/summary_cards.dart';
 import 'package:upi_expense_tracker/widgets/transaction_list_item.dart';
+import 'package:upi_expense_tracker/widgets/spend_distribution_chart.dart';
+import 'package:upi_expense_tracker/widgets/hourly_spend_chart.dart';
+import 'package:upi_expense_tracker/widgets/cumulative_spend_chart.dart';
+import 'package:upi_expense_tracker/widgets/category_pie_chart.dart';
+import 'package:upi_expense_tracker/widgets/insights_panel.dart';
+import 'package:upi_expense_tracker/utils/category_utils.dart';
+import 'package:upi_expense_tracker/screens/merchant_manager_screen.dart';
 
 class TransactionSummaryScreen extends StatefulWidget {
   final List<Transaction> transactions;
@@ -29,6 +37,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   late TabController _tabController;
   bool _isAggregated = false;
   List<Transaction> _aggregatedTransactions = [];
+  final Set<SpendCategory> _selectedCategories = {};
 
   @override
   void initState() {
@@ -37,7 +46,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     _endDate = DateTime.now();
     _startDate = _endDate.subtract(const Duration(days: 30));
     _updateFilteredTransactions();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -60,14 +69,15 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   }
 
   void _updateAggregatedTransactions() {
+    final base = _applyCategoryFilter(_filteredTransactions);
     if (!_isAggregated) {
-      _aggregatedTransactions = List.from(_filteredTransactions);
+      _aggregatedTransactions = List.from(base);
       return;
     }
 
     // Group by merchant name
     final Map<String, List<Transaction>> grouped = {};
-    for (var transaction in _filteredTransactions) {
+    for (var transaction in base) {
       if (!grouped.containsKey(transaction.merchant)) {
         grouped[transaction.merchant] = [];
       }
@@ -99,6 +109,49 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     _aggregatedTransactions.sort((a, b) => b.dateTime.compareTo(a.dateTime));
   }
 
+  List<Transaction> _applyCategoryFilter(List<Transaction> input) {
+    if (_selectedCategories.isEmpty) return input;
+    return input.where((t) => _selectedCategories.contains(getCategoryForMerchant(t.merchant))).toList();
+  }
+
+  void _toggleCategory(SpendCategory category) {
+    setState(() {
+      if (_selectedCategories.contains(category)) {
+        _selectedCategories.remove(category);
+      } else {
+        _selectedCategories.add(category);
+      }
+      _updateAggregatedTransactions();
+    });
+  }
+
+  Widget _categoryChips() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        FilterChip(
+          label: const Text('All'),
+          selected: _selectedCategories.isEmpty,
+          onSelected: (_) {
+            setState(() {
+              _selectedCategories.clear();
+              _updateAggregatedTransactions();
+            });
+          },
+        ),
+        ...SpendCategory.values.map((c) => FilterChip(
+          label: Text(kCategoryInfo[c]!.name),
+          selected: _selectedCategories.contains(c),
+          onSelected: (_) => _toggleCategory(c),
+          avatar: Icon(kCategoryInfo[c]!.icon, size: 16, color: kCategoryInfo[c]!.color),
+          selectedColor: kCategoryInfo[c]!.color.withOpacity(0.15),
+          checkmarkColor: kCategoryInfo[c]!.color,
+        )),
+      ],
+    );
+  }
+
   void _toggleAggregation() {
     setState(() {
       _isAggregated = !_isAggregated;
@@ -128,81 +181,214 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transaction Analysis'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Analytics'),
-            Tab(text: 'Transactions'),
-          ],
-        ),
       ),
       body: widget.transactions.isEmpty
           ? _buildEmptyState()
-          : TabBarView(
-        controller: _tabController,
+          : Column(
         children: [
-          _buildAnalyticsTab(),
-          _buildTransactionsTab(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: DateRangeSelector(
+              startDate: _startDate,
+              endDate: _endDate,
+              onDateRangeChanged: _setDateRange,
+              onQuickRangeSelected: _setQuickDateRange,
+            ),
+          ),
+          const Divider(height: 1),
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabs: const [
+                Tab(text: 'Overview'),
+                Tab(text: 'Trends'),
+                Tab(text: 'Categories'),
+                Tab(text: 'Merchants'),
+                Tab(text: 'Transactions'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildOverviewTab(),
+                _buildTrendsTab(),
+                _buildCategoriesTab(),
+                _buildMerchantsTab(),
+                _buildTransactionsTab(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildAnalyticsTab() {
+  Widget _buildOverviewTab() {
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            DateRangeSelector(
-              startDate: _startDate,
-              endDate: _endDate,
-              onDateRangeChanged: _setDateRange,
-              onQuickRangeSelected: _setQuickDateRange,
+            SummaryCards(transactions: _filteredTransactions),
+
+            const SizedBox(height: 24),
+
+            _sectionTitle('Insights'),
+            const SizedBox(height: 8),
+            _sectionCard(
+              InsightsPanel(transactions: _applyCategoryFilter(_filteredTransactions), startDate: _startDate, endDate: _endDate),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
-            SummaryCards(transactions: _filteredTransactions),
+            _sectionTitle('Quick Filters'),
+            const SizedBox(height: 8),
+            _sectionCard(_categoryChips()),
 
             const SizedBox(height: 24),
 
             _sectionTitle('Daily Spending Trend'),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 220,
-              child: DailySpendChart(
-                  transactions: _filteredTransactions,
-                  startDate: _startDate,
-                  endDate: _endDate
+            _sectionCard(
+              SizedBox(
+                height: 220,
+                child: DailySpendChart(
+                    transactions: _applyCategoryFilter(_filteredTransactions),
+                    startDate: _startDate,
+                    endDate: _endDate
+                ),
               ),
             ),
 
             const SizedBox(height: 24),
 
+            _sectionTitle('Highlights'),
+            const SizedBox(height: 8),
+            _sectionCard(FrequentMerchantsList(transactions: _applyCategoryFilter(_filteredTransactions))),
+
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendsTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('Cumulative Spend'),
+            const SizedBox(height: 8),
+            _sectionCard(
+              SizedBox(
+                height: 220,
+                child: CumulativeSpendChart(
+                  transactions: _applyCategoryFilter(_filteredTransactions),
+                  startDate: _startDate,
+                  endDate: _endDate,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
             _sectionTitle('Spending by Day of Week'),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 220,
-              child: WeekdaySpendChart(transactions: _filteredTransactions),
+            _sectionCard(
+              SizedBox(
+                height: 220,
+                child: WeekdaySpendChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+              ),
             ),
-
             const SizedBox(height: 24),
-
-            _sectionTitle('Top Merchants'),
+            _sectionTitle('Hourly Spend Pattern'),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 220,
-              child: MerchantChart(transactions: _filteredTransactions),
+            _sectionCard(
+              SizedBox(
+                height: 220,
+                child: HourlySpendChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+              ),
             ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildCategoriesTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('Filter by Category'),
+            const SizedBox(height: 8),
+            _sectionCard(_categoryChips()),
+            const SizedBox(height: 16),
+            _sectionTitle('Spend Distribution (Pie)'),
+            const SizedBox(height: 8),
+            _sectionCard(
+              SizedBox(
+                height: 240,
+                child: SpendDistributionChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+              ),
+            ),
             const SizedBox(height: 24),
+            _sectionTitle('Category Breakdown'),
+            const SizedBox(height: 8),
+            _sectionCard(
+              SizedBox(
+                height: 240,
+                child: CategoryPieChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildMerchantsTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('Top Merchants (Bar)'),
+            const SizedBox(height: 8),
+            _sectionCard(
+              SizedBox(
+                height: 220,
+                child: MerchantChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MerchantManagerScreen()),
+                  );
+                },
+                icon: const Icon(Icons.manage_accounts),
+                label: const Text('Manage Merchants'),
+              ),
+            ),
+            const SizedBox(height: 8),
             _sectionTitle('Frequent Merchants'),
             const SizedBox(height: 8),
-            FrequentMerchantsList(transactions: _filteredTransactions),
-
+            _sectionCard(FrequentMerchantsList(transactions: _applyCategoryFilter(_filteredTransactions))),
             const SizedBox(height: 32),
           ],
         ),
@@ -311,9 +497,16 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   Widget _sectionTitle(String title) {
     return Text(
       title,
-      style: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.bold,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+    );
+  }
+
+  Widget _sectionCard(Widget child) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: child,
       ),
     );
   }

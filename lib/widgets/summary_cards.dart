@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:upi_expense_tracker/models/transaction.dart';
+import 'package:upi_expense_tracker/utils/category_utils.dart';
 
 class SummaryCards extends StatelessWidget {
   final List<Transaction> transactions;
@@ -50,6 +51,18 @@ class SummaryCards extends StatelessWidget {
       locale: 'en_IN',
     );
 
+    // Category leader for KPI
+    final Map<SpendCategory, double> totalsByCat = {};
+    for (final t in transactions) {
+      final c = getCategoryForMerchant(t.merchant);
+      totalsByCat[c] = (totalsByCat[c] ?? 0) + t.amount;
+    }
+    MapEntry<SpendCategory, double>? topCatEntry;
+    if (totalsByCat.isNotEmpty) {
+      final list = totalsByCat.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+      topCatEntry = list.first;
+    }
+
     return GridView.count(
       crossAxisCount: 2,
       crossAxisSpacing: 12,
@@ -91,6 +104,15 @@ class SummaryCards extends StatelessWidget {
           icon: Icons.calendar_today,
           color: Colors.purple,
         ),
+        if (topCatEntry != null)
+          _buildSummaryCard(
+            context,
+            title: 'Top Category',
+            value: getCategoryName(topCatEntry!.key),
+            subtitle: currencyFormat.format(topCatEntry!.value),
+            icon: getCategoryIcon(topCatEntry!.key),
+            color: getCategoryColor(topCatEntry!.key),
+          ),
       ],
     );
   }
