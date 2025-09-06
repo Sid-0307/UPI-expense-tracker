@@ -141,16 +141,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         elevation: 2,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.auto_stories, size: 18),
-                          const SizedBox(width: 8),
-                          Text(
-                            isLoading ? 'Loading...' : 'Read My Transactions',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
-                        ],
+                      child: isLoading
+                          ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(),
+                      )
+                          : const Text(
+                        'Read My Transactions',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
@@ -160,22 +159,21 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
 
               // Loading Indicator
-              if (isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 32.0),
-                    child: Column(
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Reading and analyzing SMS messages...'),
-                      ],
-                    ),
-                  ),
-                ),
+              // if (isLoading)
+              //   const Center(
+              //     child: Padding(
+              //       padding: EdgeInsets.only(top: 32.0),
+              //       child: Column(
+              //         children: [
+              //           CircularProgressIndicator(),
+              //           SizedBox(height: 16),
+              //           Text('Reading and analyzing SMS messages...'),
+              //         ],
+              //       ),
+              //     ),
+              //   ),
 
               // App description (stronger contrast)
-              if (!isLoading)
                 Expanded(
                   child: Center(
                     child: Card(
@@ -291,14 +289,25 @@ class _ThemeFabState extends State<_ThemeFab> with SingleTickerProviderStateMixi
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 250));
-    if (AppTheme.mode.value == ThemeMode.dark) {
+    
+    // Check the actual resolved theme mode
+    final currentMode = AppTheme.mode.value;
+    final isDark = currentMode == ThemeMode.dark || 
+                   (currentMode == ThemeMode.system && 
+                    WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
+    
+    if (isDark) {
       _controller.value = 1;
     }
     AppTheme.mode.addListener(_sync);
   }
 
   void _sync() {
-    final isDark = AppTheme.mode.value == ThemeMode.dark;
+    final currentMode = AppTheme.mode.value;
+    final isDark = currentMode == ThemeMode.dark || 
+                   (currentMode == ThemeMode.system && 
+                    WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
+    
     if (isDark) {
       _controller.forward();
     } else {
@@ -316,7 +325,11 @@ class _ThemeFabState extends State<_ThemeFab> with SingleTickerProviderStateMixi
 
   @override
   Widget build(BuildContext context) {
-    final isDark = AppTheme.mode.value == ThemeMode.dark;
+    final currentMode = AppTheme.mode.value;
+    final isDark = currentMode == ThemeMode.dark || 
+                   (currentMode == ThemeMode.system && 
+                    WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
+    
     return GestureDetector(
       onTap: () {
         AppTheme.mode.value = isDark ? ThemeMode.light : ThemeMode.dark;

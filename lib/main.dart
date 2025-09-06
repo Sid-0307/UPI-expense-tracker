@@ -41,7 +41,7 @@ class MyApp extends StatelessWidget {
       onSurface: onSurface,
       background: background,
       onBackground: onBackground,
-      surfaceVariant: const Color(0xFFF5F5F5),
+      surfaceVariant: const Color(0xFFD3D1D1),
       onSurfaceVariant: const Color(0xFF333333),
       outline: const Color(0xFFCCCCCC),
       outlineVariant: const Color(0xFFE0E0E0),
