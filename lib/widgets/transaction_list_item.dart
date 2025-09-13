@@ -41,7 +41,7 @@ class TransactionListItem extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: Theme.of(context).brightness == Brightness.light
-                  ? scheme.primary.withOpacity(0.1)
+                  ? scheme.primary.withOpacity(0.05)
                   : scheme.primary.withOpacity(0.12),
               spreadRadius: 0,
             ),

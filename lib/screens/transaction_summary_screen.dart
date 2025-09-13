@@ -404,7 +404,9 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   }
 
   Widget _buildTransactionsTab() {
-    final displayTransactions = _isAggregated ? _aggregatedTransactions : _filteredTransactions;
+    final displayTransactions = _isAggregated
+        ? _aggregatedTransactions
+        : _applyCategoryFilter(_filteredTransactions);
     final scheme = Theme.of(context).colorScheme;
 
     return Padding(
@@ -412,47 +414,62 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with transaction and merchant counts
-          // Row(
-          //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //   children: [
-          //     Container(
-          //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          //       decoration: BoxDecoration(
-          //         color: scheme.primary.withOpacity(0.1),
-          //         borderRadius: BorderRadius.circular(16),
-          //         border: Border.all(color: scheme.primary.withOpacity(0.3)),
-          //       ),
-          //       child: Text(
-          //         '${displayTransactions.length} transactions',
-          //         style: TextStyle(
-          //           color: scheme.primary,
-          //           fontSize: 12,
-          //           fontWeight: FontWeight.w600,
-          //         ),
-          //       ),
-          //     ),
-          //     Container(
-          //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          //       decoration: BoxDecoration(
-          //         color: scheme.primary.withOpacity(0.1),
-          //         borderRadius: BorderRadius.circular(16),
-          //         border: Border.all(color: scheme.primary.withOpacity(0.3)),
-          //       ),
-          //       child: Text(
-          //         _isAggregated
-          //             ? '${displayTransactions.length} merchants'
-          //             : '${_getUniqueMerchantCount()} merchants',
-          //         style: TextStyle(
-          //           color: scheme.primary,
-          //           fontSize: 12,
-          //           fontWeight: FontWeight.w600,
-          //         ),
-          //       ),
-          //     ),
-          //   ],
-          // ),
-          // const SizedBox(height: 16),
+          // Horizontal Category Filter
+          SizedBox(
+            height: 40,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // All Categories button
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: _buildCategoryFilterChip(
+                      label: 'All',
+                      icon: Icons.all_inclusive,
+                      isSelected: _selectedCategories.isEmpty,
+                      color: scheme.primary,
+                      onTap: () {
+                        setState(() {
+                          _selectedCategories.clear();
+                          _updateAggregatedTransactions();
+                        });
+                      },
+                    ),
+                  ),
+                  // Individual category buttons
+                  ...getAllCategories().map((category) {
+                    final categoryColor = category == SpendCategory.others
+                        ? getCategoryColor(category, colorScheme: scheme)
+                        : getCategoryColor(category);
+
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: _buildCategoryFilterChip(
+                        label: getCategoryName(category),
+                        icon: getCategoryIcon(category),
+                        isSelected: _selectedCategories.contains(category),
+                        color: categoryColor,
+                        onTap: () {
+                          setState(() {
+                            if (_selectedCategories.contains(category)) {
+                              _selectedCategories.remove(category);
+                            } else {
+                              _selectedCategories.clear();
+                              _selectedCategories.add(category);
+                            }
+                            _updateAggregatedTransactions();
+                          });
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
 
           // View toggle and sort toggle
           Row(
@@ -530,7 +547,9 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                   Icon(Icons.receipt_long, size: 64, color: scheme.onSurfaceVariant),
                   const SizedBox(height: 16),
                   Text(
-                    'No transactions in selected period',
+                    _selectedCategories.isEmpty
+                        ? 'No transactions in selected period'
+                        : 'No transactions found for selected category',
                     style: TextStyle(
                       color: scheme.onSurfaceVariant,
                       fontSize: 16,
@@ -554,6 +573,211 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       ),
     );
   }
+
+  Widget _buildCategoryFilterChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? color.withOpacity(0.15)
+              : scheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? color
+                : scheme.outlineVariant,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected
+                  ? color
+                  : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected
+                    ? color
+                    : scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Widget _buildTransactionsTab() {
+  //   final displayTransactions = _isAggregated ? _aggregatedTransactions : _filteredTransactions;
+  //   final scheme = Theme.of(context).colorScheme;
+  //
+  //   return Padding(
+  //     padding: const EdgeInsets.all(16.0),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         // Header with transaction and merchant counts
+  //         // Row(
+  //         //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //         //   children: [
+  //         //     Container(
+  //         //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+  //         //       decoration: BoxDecoration(
+  //         //         color: scheme.primary.withOpacity(0.1),
+  //         //         borderRadius: BorderRadius.circular(16),
+  //         //         border: Border.all(color: scheme.primary.withOpacity(0.3)),
+  //         //       ),
+  //         //       child: Text(
+  //         //         '${displayTransactions.length} transactions',
+  //         //         style: TextStyle(
+  //         //           color: scheme.primary,
+  //         //           fontSize: 12,
+  //         //           fontWeight: FontWeight.w600,
+  //         //         ),
+  //         //       ),
+  //         //     ),
+  //         //     Container(
+  //         //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+  //         //       decoration: BoxDecoration(
+  //         //         color: scheme.primary.withOpacity(0.1),
+  //         //         borderRadius: BorderRadius.circular(16),
+  //         //         border: Border.all(color: scheme.primary.withOpacity(0.3)),
+  //         //       ),
+  //         //       child: Text(
+  //         //         _isAggregated
+  //         //             ? '${displayTransactions.length} merchants'
+  //         //             : '${_getUniqueMerchantCount()} merchants',
+  //         //         style: TextStyle(
+  //         //           color: scheme.primary,
+  //         //           fontSize: 12,
+  //         //           fontWeight: FontWeight.w600,
+  //         //         ),
+  //         //       ),
+  //         //     ),
+  //         //   ],
+  //         // ),
+  //         // const SizedBox(height: 16),
+  //
+  //         // View toggle and sort toggle
+  //         Row(
+  //           children: [
+  //             // View Toggle Button
+  //             Expanded(
+  //               child: ElevatedButton.icon(
+  //                 onPressed: _toggleAggregation,
+  //                 icon: Icon(
+  //                   _isAggregated ? Icons.splitscreen : Icons.group_work,
+  //                   size: 18,
+  //                   color: scheme.onPrimary, // Set icon color to white
+  //                 ),
+  //                 label: Text(_isAggregated ? 'Split View' : 'Aggregate View'),
+  //                 style: ElevatedButton.styleFrom(
+  //                   backgroundColor: scheme.primary,
+  //                   foregroundColor: scheme.onPrimary,
+  //                   padding: const EdgeInsets.symmetric(vertical: 12),
+  //                   shape: RoundedRectangleBorder(
+  //                     borderRadius: BorderRadius.circular(10),
+  //                   ),
+  //                 ),
+  //               ),
+  //             ),
+  //             ..._isAggregated
+  //                 ? [
+  //               const SizedBox(width: 12),
+  //               Expanded(
+  //                 child: ElevatedButton.icon(
+  //                   onPressed: () {
+  //                     setState(() {
+  //                       _aggregateSortBy = _aggregateSortBy == 'frequency_high'
+  //                           ? 'amount_high'
+  //                           : 'frequency_high';
+  //                       _updateAggregatedTransactions();
+  //                     });
+  //                   },
+  //                   icon: Icon(
+  //                     _aggregateSortBy != 'frequency_high'
+  //                         ? Icons.trending_up
+  //                         : Icons.attach_money,
+  //                     size: 18,
+  //                     color: scheme.onPrimary,
+  //                   ),
+  //                   label: Text(
+  //                     _aggregateSortBy != 'frequency_high'
+  //                         ? 'By Frequency'
+  //                         : 'By Amount',
+  //                   ),
+  //                   style: ElevatedButton.styleFrom(
+  //                     backgroundColor: scheme.primary,
+  //                     foregroundColor: scheme.onPrimary,
+  //                     padding: const EdgeInsets.symmetric(vertical: 12),
+  //                     shape: RoundedRectangleBorder(
+  //                       borderRadius: BorderRadius.circular(10),
+  //                     ),
+  //                   ),
+  //                 ),
+  //               ),
+  //             ]
+  //                 : [],
+  //
+  //           ],
+  //         ),
+  //
+  //         const SizedBox(height: 16),
+  //
+  //         // Transaction List
+  //         Expanded(
+  //           child: displayTransactions.isEmpty
+  //               ? Center(
+  //             child: Column(
+  //               mainAxisAlignment: MainAxisAlignment.center,
+  //               children: [
+  //                 Icon(Icons.receipt_long, size: 64, color: scheme.onSurfaceVariant),
+  //                 const SizedBox(height: 16),
+  //                 Text(
+  //                   'No transactions in selected period',
+  //                   style: TextStyle(
+  //                     color: scheme.onSurfaceVariant,
+  //                     fontSize: 16,
+  //                   ),
+  //                 ),
+  //               ],
+  //             ),
+  //           )
+  //               : ListView.builder(
+  //             itemCount: displayTransactions.length,
+  //             itemBuilder: (context, index) {
+  //               return TransactionListItem(
+  //                 transaction: displayTransactions[index],
+  //                 isCurrentMonth: displayTransactions[index].isFromCurrentMonth(),
+  //                 showTransactionCount: _isAggregated,
+  //               );
+  //             },
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildEmptyState() {
     return Center(

@@ -149,3 +149,20 @@ Color getCategoryColor(SpendCategory category, {ColorScheme? colorScheme}) {
 }
 
 IconData getCategoryIcon(SpendCategory category) => kCategoryInfo[category]!.icon;
+
+// Helper function to get all categories in a specific order
+List<SpendCategory> getAllCategories() {
+  return [
+    SpendCategory.food,
+    SpendCategory.groceries,
+    SpendCategory.shopping,
+    SpendCategory.bills,
+    SpendCategory.transport,
+    SpendCategory.travel,
+    SpendCategory.entertainment,
+    SpendCategory.health,
+    SpendCategory.education,
+    SpendCategory.utilities,
+    SpendCategory.others,
+  ];
+}
