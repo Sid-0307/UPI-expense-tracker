@@ -6,7 +6,8 @@ import 'package:upi_expense_tracker/utils/date_formatter.dart';
 import 'package:upi_expense_tracker/widgets/daily_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/merchant_chart.dart';
 import 'package:upi_expense_tracker/widgets/weekday_spend_chart.dart';
-import 'package:upi_expense_tracker/widgets/date_range_selector.dart';
+import 'package:upi_expense_tracker/widgets/compact_date_selector.dart';
+import 'package:upi_expense_tracker/widgets/collapsible_category_filter.dart';
 import 'package:upi_expense_tracker/widgets/frequent_merchant_list.dart';
 import 'package:upi_expense_tracker/widgets/summary_cards.dart';
 import 'package:upi_expense_tracker/widgets/transaction_list_item.dart';
@@ -17,6 +18,8 @@ import 'package:upi_expense_tracker/widgets/category_pie_chart.dart';
 import 'package:upi_expense_tracker/widgets/insights_panel.dart';
 import 'package:upi_expense_tracker/utils/category_utils.dart';
 import 'package:upi_expense_tracker/screens/merchant_manager_screen.dart';
+
+import '../widgets/date_range_selector.dart';
 
 class TransactionSummaryScreen extends StatefulWidget {
   final List<Transaction> transactions;
@@ -38,6 +41,10 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   bool _isAggregated = false;
   List<Transaction> _aggregatedTransactions = [];
   final Set<SpendCategory> _selectedCategories = {};
+  
+  // Sorting options
+  String _aggregateSortBy = 'frequency_high'; // frequency_high, amount_high
+  String _splitSortBy = 'amount_high'; // amount_high
 
   @override
   void initState() {
@@ -46,7 +53,10 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     _endDate = DateTime.now();
     _startDate = _endDate.subtract(const Duration(days: 30));
     _updateFilteredTransactions();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -72,6 +82,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     final base = _applyCategoryFilter(_filteredTransactions);
     if (!_isAggregated) {
       _aggregatedTransactions = List.from(base);
+      _sortSplitTransactions();
       return;
     }
 
@@ -100,13 +111,29 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       // Create a new transaction representing the group
       return Transaction(
         amount: totalAmount,
-        merchant: '$merchantName (${transactions.length} transactions)',
+        merchant: merchantName, // Remove transaction count from name
         dateTime: latestDate,
+        transactionCount: transactions.length, // Store count separately
       );
     }).toList();
 
-    // Sort by date (newest first)
-    _aggregatedTransactions.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+    _sortAggregatedTransactions();
+  }
+
+  void _sortAggregatedTransactions() {
+    switch (_aggregateSortBy) {
+      case 'frequency_high':
+        _aggregatedTransactions.sort((a, b) => (b.transactionCount ?? 0).compareTo(a.transactionCount ?? 0));
+        break;
+      case 'amount_high':
+        _aggregatedTransactions.sort((a, b) => b.amount.compareTo(a.amount));
+        break;
+    }
+  }
+
+  void _sortSplitTransactions() {
+    // Split transactions always sort by amount high to low
+    _aggregatedTransactions.sort((a, b) => b.amount.compareTo(a.amount));
   }
 
   List<Transaction> _applyCategoryFilter(List<Transaction> input) {
@@ -125,32 +152,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     });
   }
 
-  Widget _categoryChips() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: [
-        FilterChip(
-          label: const Text('All'),
-          selected: _selectedCategories.isEmpty,
-          onSelected: (_) {
-            setState(() {
-              _selectedCategories.clear();
-              _updateAggregatedTransactions();
-            });
-          },
-        ),
-        ...SpendCategory.values.map((c) => FilterChip(
-          label: Text(kCategoryInfo[c]!.name),
-          selected: _selectedCategories.contains(c),
-          onSelected: (_) => _toggleCategory(c),
-          avatar: Icon(kCategoryInfo[c]!.icon, size: 16, color: kCategoryInfo[c]!.color),
-          selectedColor: kCategoryInfo[c]!.color.withOpacity(0.15),
-          checkmarkColor: kCategoryInfo[c]!.color,
-        )),
-      ],
-    );
-  }
 
   void _toggleAggregation() {
     setState(() {
@@ -173,6 +174,10 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     _setDateRange(start, end);
   }
 
+  int _getUniqueMerchantCount() {
+    return _filteredTransactions.map((t) => t.merchant).toSet().length;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Sort transactions by date (newest first)
@@ -184,18 +189,17 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       ),
       body: widget.transactions.isEmpty
           ? _buildEmptyState()
-          : Column(
+          :           Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: DateRangeSelector(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: CompactDateSelector(
               startDate: _startDate,
               endDate: _endDate,
               onDateRangeChanged: _setDateRange,
               onQuickRangeSelected: _setQuickDateRange,
             ),
           ),
-          const Divider(height: 1),
           Material(
             color: Theme.of(context).colorScheme.surface,
             child: TabBar(
@@ -205,7 +209,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                 Tab(text: 'Overview'),
                 Tab(text: 'Trends'),
                 Tab(text: 'Categories'),
-                Tab(text: 'Merchants'),
                 Tab(text: 'Transactions'),
               ],
             ),
@@ -217,13 +220,29 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                 _buildOverviewTab(),
                 _buildTrendsTab(),
                 _buildCategoriesTab(),
-                _buildMerchantsTab(),
                 _buildTransactionsTab(),
               ],
             ),
           ),
         ],
       ),
+      floatingActionButton: _tabController.index == 2
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                // Build unique merchant names from currently filtered transactions
+                final uniqueMerchants = _applyCategoryFilter(_filteredTransactions)
+                    .map((t) => t.merchant)
+                    .toSet()
+                    .toList()
+                  ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => MerchantManagerScreen(knownMerchants: uniqueMerchants)),
+                );
+              },
+              icon: const Icon(Icons.manage_accounts),
+              label: const Text('Manage Merchants'),
+            )
+          : null,
     );
   }
 
@@ -246,9 +265,16 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
 
             const SizedBox(height: 24),
 
-            _sectionTitle('Quick Filters'),
-            const SizedBox(height: 8),
-            _sectionCard(_categoryChips()),
+            CollapsibleCategoryFilter(
+              selectedCategories: _selectedCategories,
+              onCategoryToggled: _toggleCategory,
+              onClearAll: () {
+                setState(() {
+                  _selectedCategories.clear();
+                  _updateAggregatedTransactions();
+                });
+              },
+            ),
 
             const SizedBox(height: 24),
 
@@ -329,9 +355,16 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _sectionTitle('Filter by Category'),
-            const SizedBox(height: 8),
-            _sectionCard(_categoryChips()),
+            CollapsibleCategoryFilter(
+              selectedCategories: _selectedCategories,
+              onCategoryToggled: _toggleCategory,
+              onClearAll: () {
+                setState(() {
+                  _selectedCategories.clear();
+                  _updateAggregatedTransactions();
+                });
+              },
+            ),
             const SizedBox(height: 16),
             _sectionTitle('Spend Distribution (Pie)'),
             const SizedBox(height: 8),
@@ -350,21 +383,8 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                 child: CategoryPieChart(transactions: _applyCategoryFilter(_filteredTransactions)),
               ),
             ),
-            const SizedBox(height: 32),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMerchantsTab() {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _sectionTitle('Top Merchants (Bar)'),
+            const SizedBox(height: 24),
+            _sectionTitle('Top Merchants'),
             const SizedBox(height: 8),
             _sectionCard(
               SizedBox(
@@ -373,19 +393,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
               ),
             ),
             const SizedBox(height: 24),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const MerchantManagerScreen()),
-                  );
-                },
-                icon: const Icon(Icons.manage_accounts),
-                label: const Text('Manage Merchants'),
-              ),
-            ),
-            const SizedBox(height: 8),
             _sectionTitle('Frequent Merchants'),
             const SizedBox(height: 8),
             _sectionCard(FrequentMerchantsList(transactions: _applyCategoryFilter(_filteredTransactions))),
@@ -398,60 +405,138 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
 
   Widget _buildTransactionsTab() {
     final displayTransactions = _isAggregated ? _aggregatedTransactions : _filteredTransactions;
+    final scheme = Theme.of(context).colorScheme;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DateRangeSelector(
-            startDate: _startDate,
-            endDate: _endDate,
-            onDateRangeChanged: _setDateRange,
-            onQuickRangeSelected: _setQuickDateRange,
-            compactMode: true,
+          // Header with transaction and merchant counts
+          // Row(
+          //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          //   children: [
+          //     Container(
+          //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          //       decoration: BoxDecoration(
+          //         color: scheme.primary.withOpacity(0.1),
+          //         borderRadius: BorderRadius.circular(16),
+          //         border: Border.all(color: scheme.primary.withOpacity(0.3)),
+          //       ),
+          //       child: Text(
+          //         '${displayTransactions.length} transactions',
+          //         style: TextStyle(
+          //           color: scheme.primary,
+          //           fontSize: 12,
+          //           fontWeight: FontWeight.w600,
+          //         ),
+          //       ),
+          //     ),
+          //     Container(
+          //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          //       decoration: BoxDecoration(
+          //         color: scheme.primary.withOpacity(0.1),
+          //         borderRadius: BorderRadius.circular(16),
+          //         border: Border.all(color: scheme.primary.withOpacity(0.3)),
+          //       ),
+          //       child: Text(
+          //         _isAggregated
+          //             ? '${displayTransactions.length} merchants'
+          //             : '${_getUniqueMerchantCount()} merchants',
+          //         style: TextStyle(
+          //           color: scheme.primary,
+          //           fontSize: 12,
+          //           fontWeight: FontWeight.w600,
+          //         ),
+          //       ),
+          //     ),
+          //   ],
+          // ),
+          // const SizedBox(height: 16),
+
+          // View toggle and sort toggle
+          Row(
+            children: [
+              // View Toggle Button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _toggleAggregation,
+                  icon: Icon(
+                    _isAggregated ? Icons.splitscreen : Icons.group_work,
+                    size: 18,
+                    color: scheme.onPrimary, // Set icon color to white
+                  ),
+                  label: Text(_isAggregated ? 'Split View' : 'Aggregate View'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: scheme.primary,
+                    foregroundColor: scheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+              ..._isAggregated
+                  ? [
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _aggregateSortBy = _aggregateSortBy == 'frequency_high'
+                            ? 'amount_high'
+                            : 'frequency_high';
+                        _updateAggregatedTransactions();
+                      });
+                    },
+                    icon: Icon(
+                      _aggregateSortBy != 'frequency_high'
+                          ? Icons.trending_up
+                          : Icons.attach_money,
+                      size: 18,
+                      color: scheme.onPrimary,
+                    ),
+                    label: Text(
+                      _aggregateSortBy != 'frequency_high'
+                          ? 'By Frequency'
+                          : 'By Amount',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ]
+                  : [],
+
+            ],
           ),
 
           const SizedBox(height: 16),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'Transactions',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: _toggleAggregation,
-                    icon: Icon(_isAggregated ? Icons.splitscreen : Icons.group_work),
-                    label: Text(_isAggregated ? 'Split' : 'Aggregate'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      textStyle: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                _isAggregated
-                    ? '${displayTransactions.length} merchants'
-                    : '${displayTransactions.length} total',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
+          // Transaction List
           Expanded(
             child: displayTransactions.isEmpty
                 ? Center(
-              child: Text(
-                'No transactions in selected period',
-                style: TextStyle(color: Colors.grey[600]),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.receipt_long, size: 64, color: scheme.onSurfaceVariant),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No transactions in selected period',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
               ),
             )
                 : ListView.builder(
@@ -460,6 +545,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                 return TransactionListItem(
                   transaction: displayTransactions[index],
                   isCurrentMonth: displayTransactions[index].isFromCurrentMonth(),
+                  showTransactionCount: _isAggregated,
                 );
               },
             ),
@@ -502,10 +588,20 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   }
 
   Widget _sectionCard(Widget child) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       margin: EdgeInsets.zero,
+      color: scheme.surface,
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: scheme.outlineVariant.withOpacity(0.5),
+          width: 0.5,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(16.0),
         child: child,
       ),
     );
