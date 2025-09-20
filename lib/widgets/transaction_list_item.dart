@@ -144,12 +144,14 @@ class TransactionListItem extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: Colors.red[700],
+                      color: transaction.type == 'debit'
+                          ? Colors.red[700]
+                          : Colors.green[700],
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Debit',
+                    transaction.type,
                     style: TextStyle(
                       fontSize: 10,
                       color: scheme.onSurfaceVariant,

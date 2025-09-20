@@ -100,8 +100,26 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       final merchantName = entry.key;
       final transactions = entry.value;
 
-      // Sum up amounts
-      final totalAmount = transactions.fold(0.0, (sum, t) => sum + t.amount);
+      // Calculate total credit and debit amounts
+      double totalCredit = 0.0;
+      double totalDebit = 0.0;
+
+      for (final transaction in transactions) {
+        if (transaction.type == 'credit') {
+          totalCredit += transaction.amount;
+        } else if (transaction.type == 'debit') {
+          totalDebit += transaction.amount;
+        }
+      }
+
+      // Calculate net amount (credit - debit)
+      final netAmount = totalCredit - totalDebit;
+
+      // Determine final transaction type based on net amount
+      final String finalType = netAmount >= 0 ? 'credit' : 'debit';
+
+      // Use absolute value of net amount
+      final double finalAmount = netAmount.abs();
 
       // Use the most recent date
       final latestDate = transactions
@@ -110,9 +128,10 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
 
       // Create a new transaction representing the group
       return Transaction(
-        amount: totalAmount,
+        amount: finalAmount,
         merchant: merchantName, // Remove transaction count from name
         dateTime: latestDate,
+        type: finalType,
         transactionCount: transactions.length, // Store count separately
       );
     }).toList();
