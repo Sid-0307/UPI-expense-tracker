@@ -408,6 +408,19 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _sectionTitle('Daily Spend'),
+            const SizedBox(height: 8),
+            _sectionCard(
+              SizedBox(
+                height: 220,
+                child: DailySpendChart(
+                  transactions: _applyCategoryFilter(_filteredTransactions),
+                  startDate: _startDate,
+                  endDate: _endDate,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
             _sectionTitle('Cumulative Spend'),
             const SizedBox(height: 8),
             _sectionCard(
@@ -436,6 +449,15 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
               SizedBox(
                 height: 220,
                 child: HourlySpendChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            _sectionTitle('Frequent Merchants'),
+            const SizedBox(height: 8),
+            _sectionCard(
+              FrequentMerchantsList(
+                transactions: _applyCategoryFilter(_filteredTransactions),
+                displayCount: 5,
               ),
             ),
             const SizedBox(height: 32),
