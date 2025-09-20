@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:upi_expense_tracker/screens/home_screen.dart';
+import 'package:upi_expense_tracker/services/merchant_store.dart';
 
 class AppTheme {
   AppTheme._();
@@ -18,7 +19,9 @@ class AppTheme {
   }
 }
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await MerchantStore.instance.initialize();
   runApp(const MyApp());
 }
 

@@ -182,7 +182,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   Widget build(BuildContext context) {
     // Sort transactions by date (newest first)
     _filteredTransactions.sort((a, b) => b.dateTime.compareTo(a.dateTime));
-
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transaction Analysis'),
@@ -198,6 +198,62 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
               endDate: _endDate,
               onDateRangeChanged: _setDateRange,
               onQuickRangeSelected: _setQuickDateRange,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16,0),
+            child: SizedBox(
+              height: 40,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    // All Categories button
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: _buildCategoryFilterChip(
+                        label: 'All',
+                        icon: Icons.all_inclusive,
+                        isSelected: _selectedCategories.isEmpty,
+                        color: scheme.primary,
+                        onTap: () {
+                          setState(() {
+                            _selectedCategories.clear();
+                            _updateAggregatedTransactions();
+                          });
+                        },
+                      ),
+                    ),
+                    // Individual category buttons
+                    ...getAllCategories().map((category) {
+                      final categoryColor = category == SpendCategory.others
+                          ? getCategoryColor(category, colorScheme: scheme)
+                          : getCategoryColor(category);
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: _buildCategoryFilterChip(
+                          label: getCategoryName(category),
+                          icon: getCategoryIcon(category),
+                          isSelected: _selectedCategories.contains(category),
+                          color: categoryColor,
+                          onTap: () {
+                            setState(() {
+                              if (_selectedCategories.contains(category)) {
+                                _selectedCategories.remove(category);
+                              } else {
+                                _selectedCategories.clear();
+                                _selectedCategories.add(category);
+                              }
+                              _updateAggregatedTransactions();
+                            });
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
             ),
           ),
           Material(
@@ -247,62 +303,84 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   }
 
   Widget _buildOverviewTab() {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SummaryCards(transactions: _filteredTransactions),
+    final filteredTransactions = _applyCategoryFilter(_filteredTransactions);
 
-            const SizedBox(height: 24),
-
-            _sectionTitle('Insights'),
-            const SizedBox(height: 8),
-            _sectionCard(
-              InsightsPanel(transactions: _applyCategoryFilter(_filteredTransactions), startDate: _startDate, endDate: _endDate),
+    return Center(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+              mainAxisAlignment: MainAxisAlignment.center, // vertical centering
+              crossAxisAlignment: CrossAxisAlignment.center, // horizontal centering
+              children: [
+                SummaryCards(transactions: filteredTransactions),
+              ],
             ),
-
-            const SizedBox(height: 24),
-
-            CollapsibleCategoryFilter(
-              selectedCategories: _selectedCategories,
-              onCategoryToggled: _toggleCategory,
-              onClearAll: () {
-                setState(() {
-                  _selectedCategories.clear();
-                  _updateAggregatedTransactions();
-                });
-              },
-            ),
-
-            const SizedBox(height: 24),
-
-            _sectionTitle('Daily Spending Trend'),
-            const SizedBox(height: 8),
-            _sectionCard(
-              SizedBox(
-                height: 220,
-                child: DailySpendChart(
-                    transactions: _applyCategoryFilter(_filteredTransactions),
-                    startDate: _startDate,
-                    endDate: _endDate
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            _sectionTitle('Highlights'),
-            const SizedBox(height: 8),
-            _sectionCard(FrequentMerchantsList(transactions: _applyCategoryFilter(_filteredTransactions))),
-
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
-      ),
     );
   }
+
+
+  // Widget _buildOverviewTab() {
+  //   return SingleChildScrollView(
+  //     child: Padding(
+  //       padding: const EdgeInsets.all(16.0),
+  //       child: Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           // CollapsibleCategoryFilter(
+  //           //   selectedCategories: _selectedCategories,
+  //           //   onCategoryToggled: _toggleCategory,
+  //           //   onClearAll: () {
+  //           //     setState(() {
+  //           //       _selectedCategories.clear();
+  //           //       _updateAggregatedTransactions();
+  //           //     });
+  //           //   },
+  //           // ),
+  //           // const SizedBox(height: 24),
+  //
+  //           SummaryCards(transactions: _applyCategoryFilter(_filteredTransactions)),
+  //
+  //           // const SizedBox(height: 24),
+  //
+  //           // _sectionTitle('Insights'),
+  //           // const SizedBox(height: 8),
+  //           // _sectionCard(
+  //           //   InsightsPanel(transactions: _applyCategoryFilter(_filteredTransactions), startDate: _startDate, endDate: _endDate),
+  //           // ),
+  //           //
+  //           // const SizedBox(height: 24),
+  //           //
+  //           //
+  //           // const SizedBox(height: 24),
+  //           //
+  //           // _sectionTitle('Daily Spending Trend'),
+  //           // const SizedBox(height: 8),
+  //           // _sectionCard(
+  //           //   SizedBox(
+  //           //     height: 220,
+  //           //     child: DailySpendChart(
+  //           //         transactions: _applyCategoryFilter(_filteredTransactions),
+  //           //         startDate: _startDate,
+  //           //         endDate: _endDate
+  //           //     ),
+  //           //   ),
+  //           // ),
+  //           //
+  //           // const SizedBox(height: 24),
+  //           //
+  //           // _sectionTitle('Highlights'),
+  //           // const SizedBox(height: 8),
+  //           // _sectionCard(FrequentMerchantsList(transactions: _applyCategoryFilter(_filteredTransactions))),
+  //           //
+  //           // const SizedBox(height: 32),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Widget _buildTrendsTab() {
     return SingleChildScrollView(
@@ -415,61 +493,61 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Horizontal Category Filter
-          SizedBox(
-            height: 40,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  // All Categories button
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: _buildCategoryFilterChip(
-                      label: 'All',
-                      icon: Icons.all_inclusive,
-                      isSelected: _selectedCategories.isEmpty,
-                      color: scheme.primary,
-                      onTap: () {
-                        setState(() {
-                          _selectedCategories.clear();
-                          _updateAggregatedTransactions();
-                        });
-                      },
-                    ),
-                  ),
-                  // Individual category buttons
-                  ...getAllCategories().map((category) {
-                    final categoryColor = category == SpendCategory.others
-                        ? getCategoryColor(category, colorScheme: scheme)
-                        : getCategoryColor(category);
-
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: _buildCategoryFilterChip(
-                        label: getCategoryName(category),
-                        icon: getCategoryIcon(category),
-                        isSelected: _selectedCategories.contains(category),
-                        color: categoryColor,
-                        onTap: () {
-                          setState(() {
-                            if (_selectedCategories.contains(category)) {
-                              _selectedCategories.remove(category);
-                            } else {
-                              _selectedCategories.clear();
-                              _selectedCategories.add(category);
-                            }
-                            _updateAggregatedTransactions();
-                          });
-                        },
-                      ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
+          // SizedBox(
+          //   height: 40,
+          //   child: SingleChildScrollView(
+          //     scrollDirection: Axis.horizontal,
+          //     child: Row(
+          //       children: [
+          //         // All Categories button
+          //         Padding(
+          //           padding: const EdgeInsets.only(right: 8.0),
+          //           child: _buildCategoryFilterChip(
+          //             label: 'All',
+          //             icon: Icons.all_inclusive,
+          //             isSelected: _selectedCategories.isEmpty,
+          //             color: scheme.primary,
+          //             onTap: () {
+          //               setState(() {
+          //                 _selectedCategories.clear();
+          //                 _updateAggregatedTransactions();
+          //               });
+          //             },
+          //           ),
+          //         ),
+          //         // Individual category buttons
+          //         ...getAllCategories().map((category) {
+          //           final categoryColor = category == SpendCategory.others
+          //               ? getCategoryColor(category, colorScheme: scheme)
+          //               : getCategoryColor(category);
+          //
+          //           return Padding(
+          //             padding: const EdgeInsets.only(right: 8.0),
+          //             child: _buildCategoryFilterChip(
+          //               label: getCategoryName(category),
+          //               icon: getCategoryIcon(category),
+          //               isSelected: _selectedCategories.contains(category),
+          //               color: categoryColor,
+          //               onTap: () {
+          //                 setState(() {
+          //                   if (_selectedCategories.contains(category)) {
+          //                     _selectedCategories.remove(category);
+          //                   } else {
+          //                     _selectedCategories.clear();
+          //                     _selectedCategories.add(category);
+          //                   }
+          //                   _updateAggregatedTransactions();
+          //                 });
+          //               },
+          //             ),
+          //           );
+          //         }).toList(),
+          //       ],
+          //     ),
+          //   ),
+          // ),
+          //
+          // const SizedBox(height: 16),
 
           // View toggle and sort toggle
           Row(

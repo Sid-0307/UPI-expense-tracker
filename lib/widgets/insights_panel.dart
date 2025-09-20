@@ -78,20 +78,20 @@ class InsightsPanel extends StatelessWidget {
               style: TextStyle(color: Colors.grey[600], fontSize: 12),
             ),
           ),
-        _insightTile(
-          icon: Icons.auto_graph,
-          color: Colors.indigo,
-          title: 'Average daily spend',
-          value: currency.format(avgDaily),
-        ),
-        const SizedBox(height: 8),
-        _insightTile(
-          icon: Icons.calendar_today,
-          color: Colors.purple,
-          title: 'Peak spend day',
-          value: '${DateFormat('EEE, dd MMM').format(peakDay)} · ${currency.format(peakDayAmount)}',
-        ),
-        const SizedBox(height: 8),
+        // _insightTile(
+        //   icon: Icons.auto_graph,
+        //   color: Colors.indigo,
+        //   title: 'Average daily spend',
+        //   value: currency.format(avgDaily),
+        // ),
+        // const SizedBox(height: 8),
+        // _insightTile(
+        //   icon: Icons.calendar_today,
+        //   color: Colors.purple,
+        //   title: 'Peak spend day',
+        //   value: '${DateFormat('EEE, dd MMM').format(peakDay)} · ${currency.format(peakDayAmount)}',
+        // ),
+        // const SizedBox(height: 8),
         if (topMerchant != null)
           _insightTile(
             icon: Icons.store,
@@ -100,20 +100,20 @@ class InsightsPanel extends StatelessWidget {
             value: '${topMerchant.key} · ${currency.format(topMerchant.value)}',
           ),
         if (topMerchant != null) const SizedBox(height: 8),
-        if (topCategory != null)
-          _insightTile(
-            icon: getCategoryIcon(topCategory.key),
-            color: getCategoryColor(topCategory.key),
-            title: 'Top category',
-            value: '${getCategoryName(topCategory.key)} · ${currency.format(topCategory.value)}',
-          ),
-        if (topCategory != null) const SizedBox(height: 8),
-        _insightTile(
-          icon: Icons.schedule,
-          color: Colors.orange,
-          title: 'Last transaction',
-          value: daysSince == 0 ? 'Today' : daysSince == 1 ? 'Yesterday' : '$daysSince days ago',
-        ),
+        // if (topCategory != null)
+        //   _insightTile(
+        //     icon: getCategoryIcon(topCategory.key),
+        //     color: getCategoryColor(topCategory.key),
+        //     title: 'Top category',
+        //     value: '${getCategoryName(topCategory.key)} · ${currency.format(topCategory.value)}',
+        //   ),
+        // if (topCategory != null) const SizedBox(height: 8),
+        // _insightTile(
+        //   icon: Icons.schedule,
+        //   color: Colors.orange,
+        //   title: 'Last transaction',
+        //   value: daysSince == 0 ? 'Today' : daysSince == 1 ? 'Yesterday' : '$daysSince days ago',
+        // ),
         const SizedBox(height: 8),
         _insightTile(
           icon: Icons.speed,

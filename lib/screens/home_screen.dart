@@ -15,7 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String selectedBank = 'Axis Bank';
-  List<String> banks = ['Axis Bank', 'HDFC Bank', 'SBI', 'ICICI Bank'];
+  List<String> banks = ['Axis Bank', 'HDFC Bank', 'SBI Bank', 'ICICI Bank', 'Kotak Bank'];
   bool isLoading = false;
 
   final PermissionService _permissionService = PermissionService();
