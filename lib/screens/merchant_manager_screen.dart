@@ -12,9 +12,9 @@ class MerchantManagerScreen extends StatefulWidget {
 
 class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
   final TextEditingController _merchantController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   SpendCategory _selectedCategory = SpendCategory.food;
   String _searchQuery = '';
-  bool _formExpanded = true;
   SpendCategory? _filterCategory; // null = All
 
   @override
@@ -31,10 +31,11 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
   @override
   void dispose() {
     _merchantController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
-  // Reusable form widget used in page and dialog
+  // Reusable form widget used in dialog
   Widget _buildFormFields(ColorScheme scheme, {bool closeOnSubmit = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,224 +199,134 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final store = MerchantStore.instance;
-    final entries = store.mappings.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    final scheme = Theme.of(context).colorScheme;
+  // Show edit dialog for a specific merchant
+  void _showEditDialog(String merchantName, SpendCategory currentCategory) {
+    SpendCategory editCategory = currentCategory;
 
-    return Scaffold(
-      backgroundColor: scheme.background,
-      appBar: AppBar(
-        title: const Text('Manage Merchants'),
-        backgroundColor: scheme.surface,
-        foregroundColor: scheme.onSurface,
-        elevation: 0,
-        centerTitle: true,
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) {
-              return MediaQuery.removeViewInsets(
-                removeBottom: true,
-                context: context,
-                child: AlertDialog(
-                  title: const Text('Add Merchant'),
-                  content: SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 400),
-                      child: _buildFormFields(scheme, closeOnSubmit: true),
-                    ),
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Merchant'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Merchant: $merchantName',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            Text('Category', style: Theme.of(context).textTheme.labelMedium),
+            const SizedBox(height: 8),
+            StatefulBuilder(
+              builder: (context, setDialogState) => DropdownButtonFormField<SpendCategory>(
+                value: editCategory,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                onChanged: (v) => setDialogState(() => editCategory = v ?? editCategory),
+                items: SpendCategory.values.map((c) => DropdownMenuItem(
+                  value: c,
+                  child: Row(
+                    children: [
+                      Icon(getCategoryIcon(c), color: getCategoryColor(c), size: 16),
+                      const SizedBox(width: 8),
+                      Text(getCategoryName(c)),
+                    ],
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Close'),
-                    ),
-                  ],
+                )).toList(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await MerchantStore.instance.upsertMapping(merchantName, editCategory);
+              setState(() {}); // Refresh main screen
+              Navigator.pop(context);
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      const Icon(Icons.edit, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Text('Updated $merchantName'),
+                    ],
+                  ),
+                  backgroundColor: Colors.blue[600],
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               );
             },
-          );
-        },
-        child: const Icon(Icons.add),
+            child: const Text('Update'),
+          ),
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 5,
-              runSpacing: 5,
+    );
+  }
+
+  // Handle merchant deletion with immediate UI update
+  Future<void> _deleteMerchant(String merchantKey) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Merchant'),
+        content: Text('Remove "$merchantKey" from your merchants?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await MerchantStore.instance.removeMapping(merchantKey);
+      setState(() {}); // Immediately update UI
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
               children: [
-                _CategoryFilterButton(
-                  label: 'All',
-                  isSelected: _filterCategory == null,
-                  color: scheme.primary,
-                  icon: Icons.all_inclusive,
-                  onTap: () => setState(() => _filterCategory = null),
-                ),
-                ...SpendCategory.values.map((c) => _CategoryFilterButton(
-                  label: getCategoryName(c),
-                  isSelected: _filterCategory == c,
-                  color: getCategoryColor(c),
-                  icon: getCategoryIcon(c),
-                  onTap: () => setState(() => _filterCategory = c),
-                )),
+                const Icon(Icons.delete_forever, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('Removed $merchantKey'),
               ],
             ),
-
-            const SizedBox(height: 12),
-
-            // Scrollable area only for cards (1 per row)
-            Expanded(
-              child: entries.isEmpty
-                  ? Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: scheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: scheme.outlineVariant),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.store_mall_directory_outlined, size: 48, color: scheme.onSurfaceVariant),
-                    const SizedBox(height: 12),
-                    Text('No merchants added yet', style: TextStyle(color: scheme.onSurfaceVariant)),
-                  ],
-                ),
-              )
-                  : Builder(
-                builder: (context) {
-                  final list = _filterCategory == null
-                      ? entries
-                      : entries.where((e) => e.value == _filterCategory).toList();
-                  return ListView.separated(
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final e = list[index];
-                      return _MerchantCard(entry: e);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MerchantCard extends StatelessWidget {
-  final MapEntry<String, SpendCategory> entry;
-  const _MerchantCard({Key? key, required this.entry}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            scheme.surface,
-            getCategoryColor(entry.value).withOpacity(0.03),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: getCategoryColor(entry.value).withOpacity(0.12),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(getCategoryIcon(entry.value), color: getCategoryColor(entry.value), size: 18),
-        ),
-        title: Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-        subtitle: Text(getCategoryName(entry.value), style: TextStyle(color: getCategoryColor(entry.value), fontSize: 11)),
-        trailing: _DeleteButton(merchantKey: entry.key),
-      ),
-    );
-  }
-}
-
-class _DeleteButton extends StatelessWidget {
-  final String merchantKey;
-  const _DeleteButton({Key? key, required this.merchantKey}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return IconButton(
-      icon: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(color: scheme.error.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
-        child: Icon(Icons.delete_outline, color: scheme.error, size: 18),
-      ),
-      onPressed: () {
-        final store = MerchantStore.instance;
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Delete Merchant'),
-            content: Text('Remove "$merchantKey" from your merchants?'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-              ElevatedButton(
-                onPressed: () async {
-                  await store.removeMapping(merchantKey);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Row(children: [Icon(Icons.delete_forever, color: Colors.white), const SizedBox(width: 8), Text('Removed $merchantKey')]),
-                      backgroundColor: scheme.error,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: scheme.error, foregroundColor: scheme.onError),
-                child: const Text('Delete'),
-              ),
-            ],
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
         );
-      },
-    );
+      }
+    }
   }
-}
 
-class _CategoryFilterButton extends StatelessWidget {
-  final String label;
-  final bool isSelected;
-  final Color color;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _CategoryFilterButton({
-    Key? key,
-    required this.label,
-    required this.isSelected,
-    required this.color,
-    required this.icon,
-    required this.onTap,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
+  // Helper method to build category filter chips
+  Widget _buildCategoryFilterChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
@@ -439,6 +350,314 @@ class _CategoryFilterButton extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: isSelected ? color : scheme.onSurface,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = MerchantStore.instance;
+    final entries = store.mappings.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final scheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: scheme.background,
+      appBar: AppBar(
+        title: const Text('Manage Merchants'),
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
+        elevation: 0,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Add Merchant',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) {
+                  return MediaQuery.removeViewInsets(
+                    removeBottom: true,
+                    context: context,
+                    child: AlertDialog(
+                      title: const Text('Add Merchant'),
+                      content: SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 400),
+                          child: _buildFormFields(scheme, closeOnSubmit: true),
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Close'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Search bar
+            TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search merchants...',
+                prefixIcon: Icon(Icons.search, color: scheme.primary, size: 18),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                  icon: Icon(Icons.clear, color: scheme.onSurfaceVariant, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: scheme.outlineVariant),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: scheme.outlineVariant),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: scheme.primary, width: 2),
+                ),
+                filled: true,
+                fillColor: scheme.surface,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Horizontal scrolling category filters
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+              child: SizedBox(
+                height: 40,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      // All Categories button
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: _buildCategoryFilterChip(
+                          label: 'All',
+                          icon: Icons.all_inclusive,
+                          isSelected: _filterCategory == null,
+                          color: scheme.primary,
+                          onTap: () => setState(() => _filterCategory = null),
+                        ),
+                      ),
+                      // Individual category buttons
+                      ...SpendCategory.values.map((category) {
+                        final categoryColor = category == SpendCategory.others
+                            ? getCategoryColor(category, colorScheme: scheme)
+                            : getCategoryColor(category);
+
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: _buildCategoryFilterChip(
+                            label: getCategoryName(category),
+                            icon: getCategoryIcon(category),
+                            isSelected: _filterCategory == category,
+                            color: categoryColor,
+                            onTap: () => setState(() => _filterCategory = category),
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Results count
+            Builder(
+              builder: (context) {
+                final filteredEntries = entries.where((e) {
+                  final matchesSearch = _searchQuery.isEmpty ||
+                      e.key.toLowerCase().contains(_searchQuery);
+                  final matchesCategory = _filterCategory == null ||
+                      e.value == _filterCategory;
+                  return matchesSearch && matchesCategory;
+                }).toList();
+
+                return Text(
+                  '${filteredEntries.length} merchant${filteredEntries.length != 1 ? 's' : ''}',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 8),
+
+            // Merchant list
+            Expanded(
+              child: entries.isEmpty
+                  ? Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.store_mall_directory_outlined,
+                        size: 48, color: scheme.onSurfaceVariant),
+                    const SizedBox(height: 12),
+                    Text('No merchants added yet',
+                        style: TextStyle(color: scheme.onSurfaceVariant)),
+                  ],
+                ),
+              )
+                  : Builder(
+                builder: (context) {
+                  final filteredList = entries.where((e) {
+                    final matchesSearch = _searchQuery.isEmpty ||
+                        e.key.toLowerCase().contains(_searchQuery);
+                    final matchesCategory = _filterCategory == null ||
+                        e.value == _filterCategory;
+                    return matchesSearch && matchesCategory;
+                  }).toList();
+
+                  if (filteredList.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off,
+                              size: 48, color: scheme.onSurfaceVariant),
+                          const SizedBox(height: 12),
+                          Text('No merchants found',
+                              style: TextStyle(color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: filteredList.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final entry = filteredList[index];
+                      return _MerchantCard(
+                        entry: entry,
+                        onEdit: () => _showEditDialog(entry.key, entry.value),
+                        onDelete: () => _deleteMerchant(entry.key),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MerchantCard extends StatelessWidget {
+  final MapEntry<String, SpendCategory> entry;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _MerchantCard({
+    Key? key,
+    required this.entry,
+    required this.onEdit,
+    required this.onDelete,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            scheme.surface,
+            getCategoryColor(entry.value).withOpacity(0.03),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: getCategoryColor(entry.value).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(getCategoryIcon(entry.value),
+              color: getCategoryColor(entry.value), size: 16),
+        ),
+        title: Text(entry.key,
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        subtitle: Text(getCategoryName(entry.value),
+            style: TextStyle(color: getCategoryColor(entry.value), fontSize: 11)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.edit, color: scheme.primary, size: 16),
+              ),
+              onPressed: onEdit,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: scheme.error.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.delete_outline, color: scheme.error, size: 16),
+              ),
+              onPressed: onDelete,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
             ),
           ],
         ),

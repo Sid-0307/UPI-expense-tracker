@@ -16,9 +16,23 @@ class HourlySpendChart extends StatelessWidget {
 
     if (debitTransactions.isEmpty) {
       return Center(
-        child: Text(
-          'No spending data available',
-          style: TextStyle(color: scheme.onSurface.withOpacity(0.6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.sentiment_dissatisfied,
+              size: 48,
+              color: scheme.onSurface.withOpacity(0.3),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No data available',
+              style: TextStyle(
+                color: scheme.onSurface.withOpacity(0.6),
+                fontSize: 16,
+              ),
+            ),
+          ],
         ),
       );
     }

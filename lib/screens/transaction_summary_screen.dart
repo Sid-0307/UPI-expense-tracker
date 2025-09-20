@@ -219,6 +219,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
               onQuickRangeSelected: _setQuickDateRange,
             ),
           ),
+          SizedBox(height: 4,),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16,0),
             child: SizedBox(
@@ -300,25 +301,25 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
             ),
           ),
         ],
-      ),
-      floatingActionButton: _tabController.index == 2
-          ? FloatingActionButton.extended(
-              onPressed: () {
-                // Build unique merchant names from currently filtered transactions
-                final uniqueMerchants = _applyCategoryFilter(_filteredTransactions)
-                    .map((t) => t.merchant)
-                    .toSet()
-                    .toList()
-                  ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => MerchantManagerScreen(knownMerchants: uniqueMerchants)),
-                );
-              },
-              icon: const Icon(Icons.manage_accounts),
-              label: const Text('Manage Merchants'),
-            )
-          : null,
-    );
+      ));
+    //   floatingActionButton: _tabController.index == 2
+    //       ? FloatingActionButton.extended(
+    //           onPressed: () {
+    //             // Build unique merchant names from currently filtered transactions
+    //             final uniqueMerchants = _applyCategoryFilter(_filteredTransactions)
+    //                 .map((t) => t.merchant)
+    //                 .toSet()
+    //                 .toList()
+    //               ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    //             Navigator.of(context).push(
+    //               MaterialPageRoute(builder: (_) => MerchantManagerScreen(knownMerchants: uniqueMerchants)),
+    //             );
+    //           },
+    //           icon: const Icon(Icons.manage_accounts),
+    //           label: const Text('Manage Merchants'),
+    //         )
+    //       : null,
+    // );
   }
 
   Widget _buildOverviewTab() {
@@ -474,48 +475,83 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CollapsibleCategoryFilter(
-              selectedCategories: _selectedCategories,
-              onCategoryToggled: _toggleCategory,
-              onClearAll: () {
-                setState(() {
-                  _selectedCategories.clear();
-                  _updateAggregatedTransactions();
-                });
-              },
+            // CollapsibleCategoryFilter(
+            //   selectedCategories: _selectedCategories,
+            //   onCategoryToggled: _toggleCategory,
+            //   onClearAll: () {
+            //     setState(() {
+            //       _selectedCategories.clear();
+            //       _updateAggregatedTransactions();
+            //     });
+            //   },
+            // ),
+            // const SizedBox(height: 16),
+
+            // Section title with Manage Merchants button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: _sectionTitle('Spend Distribution (Pie)'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    // Build unique merchant names from currently filtered transactions
+                    final uniqueMerchants = _applyCategoryFilter(widget.transactions)
+                        .map((t) => t.merchant)
+                        .toSet()
+                        .toList()
+                      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => MerchantManagerScreen(knownMerchants: uniqueMerchants)),
+                    );
+                  },
+                  icon:  Icon(Icons.manage_accounts, size: 20,color: Theme.of(context).colorScheme.surface),
+                  label: Text(
+                    'Manage',
+                    style: TextStyle(fontSize: 16,color: Theme.of(context).colorScheme.surface),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary, // <--- set background here
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            _sectionTitle('Spend Distribution (Pie)'),
+
             const SizedBox(height: 8),
             _sectionCard(
               SizedBox(
-                height: 240,
+                height: 490,
                 child: SpendDistributionChart(transactions: _applyCategoryFilter(_filteredTransactions)),
               ),
             ),
-            const SizedBox(height: 24),
-            _sectionTitle('Category Breakdown'),
-            const SizedBox(height: 8),
-            _sectionCard(
-              SizedBox(
-                height: 240,
-                child: CategoryPieChart(transactions: _applyCategoryFilter(_filteredTransactions)),
-              ),
-            ),
-            const SizedBox(height: 24),
-            _sectionTitle('Top Merchants'),
-            const SizedBox(height: 8),
-            _sectionCard(
-              SizedBox(
-                height: 220,
-                child: MerchantChart(transactions: _applyCategoryFilter(_filteredTransactions)),
-              ),
-            ),
-            const SizedBox(height: 24),
-            _sectionTitle('Frequent Merchants'),
-            const SizedBox(height: 8),
-            _sectionCard(FrequentMerchantsList(transactions: _applyCategoryFilter(_filteredTransactions))),
-            const SizedBox(height: 32),
+            // const SizedBox(height: 24),
+            // _sectionTitle('Category Breakdown'),
+            // const SizedBox(height: 8),
+            // _sectionCard(
+            //   SizedBox(
+            //     height: 240,
+            //     child: CategoryPieChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+            //   ),
+            // ),
+            // const SizedBox(height: 24),
+            // _sectionTitle('Top Merchants'),
+            // const SizedBox(height: 8),
+            // _sectionCard(
+            //   SizedBox(
+            //     height: 220,
+            //     child: MerchantChart(transactions: _applyCategoryFilter(_filteredTransactions)),
+            //   ),
+            // ),
+            // const SizedBox(height: 24),
+            // _sectionTitle('Frequent Merchants'),
+            // const SizedBox(height: 8),
+            // _sectionCard(FrequentMerchantsList(transactions: _applyCategoryFilter(_filteredTransactions))),
+            // const SizedBox(height: 32),
           ],
         ),
       ),
