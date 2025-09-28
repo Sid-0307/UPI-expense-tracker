@@ -67,14 +67,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       TextSpan(
                         text: 'X',
-                        style: GoogleFonts.bagelFatOne(
+                        style: TextStyle(
+                          fontFamily: 'BagelFatOne',
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       TextSpan(
                         text: 'pense',
-                        style: GoogleFonts.cherryBombOne(
-                          fontWeight: FontWeight.w100// or Theme.of(context).colorScheme.onBackground
+                        style: TextStyle(
+                          fontFamily: 'CherryBombOne',
+                          fontWeight: FontWeight.w100,
+                          color: Theme.of(context).colorScheme.onBackground,
                         ),
                       ),
                     ],
