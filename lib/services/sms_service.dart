@@ -15,31 +15,30 @@ class SmsService {
 
       // Parse messages based on bank type
       List<Transaction> parsedTransactions = [];
-
+      print("Bank name"+bankName);
       for (var message in messages) {
         if (message.body == null) continue;
-
         Transaction? transaction;
         // Route to appropriate parser based on bank
         if (bankName == 'Axis Bank' &&
             message.body!.contains('BLOCKUPI') &&
             message.body!.contains('Axis Bank')) {
-          transaction = _parseAxisBankSms(message.body!);
+          transaction = _parseAxisBankSms(message.body!,message.date!);
         } else if (bankName == 'ICICI Bank' &&
             (message.body!.contains('ICICI Bank') || message.body!.contains('ICICI'))) {
-          transaction = _parseICICIBankSms(message.body!);
+          transaction = _parseICICIBankSms(message.body!,message.date!);
         } else if (bankName == 'HDFC Bank' &&
             message.body!.contains('HDFC Bank')) {
-          transaction = _parseHDFCBankSms(message.body!);
+          transaction = _parseHDFCBankSms(message.body!,message.date!);
         } else if (bankName == 'Citi Union Bank' &&
             (_isCUBSms(message.body!))) {
-          transaction = _parseCUBSms(message.body!);
+          transaction = _parseCUBSms(message.body!,message.date!);
         } else if (bankName == 'Kotak Bank' &&
             message.body!.contains('Kotak Bank')) {
-          transaction = _parseKotakBankSms(message.body!);
+          transaction = _parseKotakBankSms(message.body!,message.date!);
         } else if (bankName == 'SBI Bank' &&
             message.body!.contains('SBI')) {
-          transaction = _parseSBISms(message.body!);
+          transaction = _parseSBISms(message.body!,message.date!);
         }
         if (transaction != null) {
           parsedTransactions.add(transaction);
@@ -72,7 +71,7 @@ class SmsService {
   }
 
   // Parse Axis Bank SMS format
-  Transaction? _parseAxisBankSms(String smsBody) {
+  Transaction? _parseAxisBankSms(String smsBody,DateTime smsDate) {
     // Example SMS format:
     // INR 3440.00 debited A/c no. XX8180 10-04-25, 17:54:12 UPI/P2M/510044436406/DUGOUT SPORTS AND E Not you? SMS BLOCKUPI Cust ID to 919951860002 Axis Bank
 
@@ -89,27 +88,7 @@ class SmsService {
         type = 'credit';
       }
 
-      // Extract date and time
-      final RegExp dateTimeRegex = RegExp(r'(\d{2}-\d{2}-\d{2}),\s+(\d{2}:\d{2}:\d{2})');
-      final dateTimeMatch = dateTimeRegex.firstMatch(smsBody);
-      if (dateTimeMatch == null) return null;
-
-      final String dateStr = dateTimeMatch.group(1)!;
-      final String timeStr = dateTimeMatch.group(2)!;
-
-      // Parse date (format: DD-MM-YY)
-      final List<String> dateParts = dateStr.split('-');
-      final int day = int.parse(dateParts[0]);
-      final int month = int.parse(dateParts[1]);
-      final int year = int.parse('20${dateParts[2]}');
-
-      // Parse time (format: HH:MM:SS)
-      final List<String> timeParts = timeStr.split(':');
-      final int hour = int.parse(timeParts[0]);
-      final int minute = int.parse(timeParts[1]);
-      final int second = int.parse(timeParts[2]);
-
-      final DateTime dateTime = DateTime(year, month, day, hour, minute, second);
+      final DateTime dateTime = smsDate;
 
       // Extract merchant name
       final RegExp merchantRegex = RegExp(r'UPI\/(?:P2M|P2A)\/\d+\/(.+)\nNot you\?');
@@ -134,7 +113,7 @@ class SmsService {
   }
 
   // Parse ICICI Bank SMS format
-  Transaction? _parseICICIBankSms(String smsBody) {
+  Transaction? _parseICICIBankSms(String smsBody,DateTime smsDate) {
     // Example formats:
     // Dear Customer, Acct XX025 is credited with Rs 28500.00 on 19-Sep-25 from G ELANGOVAN. UPI:562824916828-ICICI Bank.
     // ICICI Bank Acct XX025 debited for Rs 600.00 on 20-Sep-25; KAKADA RAMPRASA credited. UPI:526361746352. Call 18002662 for dispute. SMS BLOCK 025 to 9215676766.
@@ -152,13 +131,7 @@ class SmsService {
         type = 'credit';
       }
 
-      // Extract date
-      final RegExp dateRegex = RegExp(r'on\s+(\d{1,2}-\w{3}-\d{2})');
-      final dateMatch = dateRegex.firstMatch(smsBody);
-      if (dateMatch == null) return null;
-
-      final String dateStr = dateMatch.group(1)!;
-      final DateTime dateTime = _parseDateString(dateStr, 'DD-MMM-YY');
+      final DateTime dateTime = smsDate;
 
       // Extract merchant name
       String merchant = "Unknown";
@@ -193,7 +166,7 @@ class SmsService {
   }
 
   // Parse HDFC Bank SMS format
-  Transaction? _parseHDFCBankSms(String smsBody) {
+  Transaction? _parseHDFCBankSms(String smsBody,DateTime smsDate) {
     // Example formats:
     // Sent Rs.1.00 From HDFC Bank A/C *1472 To SIDDHARTH S On 20/09/25 Ref 111520861388
     // Received Rs.500.00 In HDFC Bank A/C *1472 From JOHN DOE On 20/09/25 Ref 111520861388
@@ -211,13 +184,7 @@ class SmsService {
         type = 'credit';
       }
 
-      // Extract date
-      final RegExp dateRegex = RegExp(r'On\s+(\d{1,2}\/\d{1,2}\/\d{2})');
-      final dateMatch = dateRegex.firstMatch(smsBody);
-      if (dateMatch == null) return null;
-
-      final String dateStr = dateMatch.group(1)!;
-      final DateTime dateTime = _parseDateString(dateStr, 'DD/MM/YY');
+      final DateTime dateTime = smsDate;
 
       // Extract merchant name
       String merchant = "Unknown";
@@ -251,7 +218,7 @@ class SmsService {
   }
 
   // Parse CUB (Citi Union Bank) SMS format
-  Transaction? _parseCUBSms(String smsBody) {
+  Transaction? _parseCUBSms(String smsBody,DateTime smsDate) {
     // Example formats:
     // Your a/c no. XXXXXXXX6873 is debited for Rs.210.00 on 20-09-2025 and credited to a/c no. XXXXXXXX0051 (UPI Ref no 526393844602)
     // Your a/c no. XXXXXXXX6873 is credited for Rs.285.00 on 17-09-2025 and debited from a/c no. XXXXXXXX2862 (UPI Ref no 562645364876) -CUB
@@ -269,13 +236,7 @@ class SmsService {
         type = 'credit';
       }
 
-      // Extract date
-      final RegExp dateRegex = RegExp(r'on\s+(\d{1,2}-\d{1,2}-\d{4})');
-      final dateMatch = dateRegex.firstMatch(smsBody);
-      if (dateMatch == null) return null;
-
-      final String dateStr = dateMatch.group(1)!;
-      final DateTime dateTime = _parseDateString(dateStr, 'DD-MM-YYYY');
+      final DateTime dateTime = smsDate;
 
       // Extract transaction type and set merchant accordingly
       String merchant = "Unknown";
@@ -309,7 +270,7 @@ class SmsService {
   }
 
   // Parse Kotak Bank SMS format
-  Transaction? _parseKotakBankSms(String smsBody) {
+  Transaction? _parseKotakBankSms(String smsBody,DateTime smsDate) {
     // Example formats:
     // Sent Rs.5.00 from Kotak Bank AC X4998 to bdpg.iruts@sbi on 20-09-25.UPI Ref 562913861691. Not you, https://kotak.com/KBANKT/Fraud
     // Received Rs.500.00 in your Kotak Bank AC X4998 from jnyrajan@okaxis on 11-09-25.UPI Ref:525442520455.
@@ -327,13 +288,7 @@ class SmsService {
         type = 'credit';
       }
 
-      // Extract date
-      final RegExp dateRegex = RegExp(r'on\s+(\d{1,2}-\d{1,2}-\d{2})');
-      final dateMatch = dateRegex.firstMatch(smsBody);
-      if (dateMatch == null) return null;
-
-      final String dateStr = dateMatch.group(1)!;
-      final DateTime dateTime = _parseDateString(dateStr, 'DD-MM-YY');
+      final DateTime dateTime = smsDate;
 
       // Extract merchant name based on transaction type
       String merchant = "Unknown";
@@ -366,23 +321,21 @@ class SmsService {
     }
   }
 
-  Transaction? _parseSBISms(String smsBody) {
+  Transaction? _parseSBISms(String smsBody,DateTime smsDate) {
     // Example formats:
     // Dear UPI user A/C X7687 debited by 40.0 on date 08Jul25 trf to MODERN BAKES Refno 518952818169. If not u? call 1800111109. -SBI
 
     try {
       // Extract amount (handle multiple formats: INR, Rs, and direct amount)
-      RegExp amountRegex = RegExp(r'(?:INR|Rs)\s+(\d+(?:\.\d+)?)');
+      RegExp amountRegex = RegExp(r'(?:INR|Rs\.?)\s*(\d+(?:\.\d+)?)');
       Match? amountMatch = amountRegex.firstMatch(smsBody);
       // If no INR/Rs prefix found, try the "debited by" or "credited by" format
       if (amountMatch == null) {
         amountRegex = RegExp(r'(?:debited|credited)\s+by\s+(\d+(?:\.\d+)?)');
         amountMatch = amountRegex.firstMatch(smsBody);
       }
-
       if (amountMatch == null) return null;
       final double amount = double.parse(amountMatch.group(1)!);
-
       // Determine transaction type
       String type = 'debit';
       if (smsBody.contains('credited to') ||
@@ -391,29 +344,7 @@ class SmsService {
         type = 'credit';
       }
 
-      // Extract date (handle multiple formats)
-      RegExp dateRegex;
-      Match? dateMatch;
-      String? dateStr;
-
-      // Try format: DDMmmYY (08Jul25)
-      dateRegex = RegExp(r'on date (\d{1,2}\w{3}\d{2})');
-      dateMatch = dateRegex.firstMatch(smsBody);
-      if (dateMatch != null) {
-        dateStr = dateMatch.group(1)!;
-      } else {
-        // Try format: DD-MMM-YY (20-Sep-25)
-        dateRegex = RegExp(r'on\s+(\d{1,2}-\w{3}-\d{2})');
-        dateMatch = dateRegex.firstMatch(smsBody);
-        if (dateMatch != null) {
-          dateStr = dateMatch.group(1)!;
-        }
-      }
-
-      if (dateStr == null) return null;
-
-      final DateTime dateTime = _parseDateString(dateStr,
-          dateStr.contains('-') ? 'DD-MMM-YY' : 'DDMMMYY');
+      final DateTime dateTime = smsDate;
 
       // Extract merchant name
       String merchant = "Unknown";
@@ -456,69 +387,69 @@ class SmsService {
     }
   }
 
-// Helper method to parse different date formats
-  DateTime _parseDateString(String dateStr, String format) {
-    try {
-      if (format == 'DD-MMM-YY') {
-        // Format: 19-Sep-25
-        final parts = dateStr.split('-');
-        final day = int.parse(parts[0]);
-        final year = int.parse('20${parts[2]}');
-
-        final monthMap = {
-          'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-          'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-        };
-        final month = monthMap[parts[1]] ?? 1;
-
-        return DateTime(year, month, day);
-      } else if (format == 'DDMMMYY') {
-        // Format: 08Jul25
-        final dayStr = dateStr.substring(0, 2);
-        final monthStr = dateStr.substring(2, 5);
-        final yearStr = dateStr.substring(5, 7);
-
-        final day = int.parse(dayStr);
-        final year = int.parse('20$yearStr');
-
-        final monthMap = {
-          'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-          'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-        };
-        final month = monthMap[monthStr] ?? 1;
-
-        return DateTime(year, month, day);
-      } else if (format == 'DD/MM/YY') {
-        // Format: 20/09/25
-        final parts = dateStr.split('/');
-        final day = int.parse(parts[0]);
-        final month = int.parse(parts[1]);
-        final year = int.parse('20${parts[2]}');
-
-        return DateTime(year, month, day);
-      } else if (format == 'DD-MM-YYYY') {
-        // Format: 20-09-2025
-        final parts = dateStr.split('-');
-        final day = int.parse(parts[0]);
-        final month = int.parse(parts[1]);
-        final year = int.parse(parts[2]);
-
-        return DateTime(year, month, day);
-      } else if (format == 'DD-MM-YY') {
-        // Format: 20-09-25
-        final parts = dateStr.split('-');
-        final day = int.parse(parts[0]);
-        final month = int.parse(parts[1]);
-        final year = int.parse('20${parts[2]}');
-
-        return DateTime(year, month, day);
-      }
-
-      // Fallback to current date if parsing fails
-      return DateTime.now();
-    } catch (e) {
-      print('Error parsing date: $dateStr with format: $format');
-      return DateTime.now();
-    }
-  }
+// // Helper method to parse different date formats
+//   DateTime _parseDateString(String dateStr, String format) {
+//     try {
+//       if (format == 'DD-MMM-YY') {
+//         // Format: 19-Sep-25
+//         final parts = dateStr.split('-');
+//         final day = int.parse(parts[0]);
+//         final year = int.parse('20${parts[2]}');
+//
+//         final monthMap = {
+//           'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+//           'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+//         };
+//         final month = monthMap[parts[1]] ?? 1;
+//
+//         return DateTime(year, month, day);
+//       } else if (format == 'DDMMMYY') {
+//         // Format: 08Jul25
+//         final dayStr = dateStr.substring(0, 2);
+//         final monthStr = dateStr.substring(2, 5);
+//         final yearStr = dateStr.substring(5, 7);
+//
+//         final day = int.parse(dayStr);
+//         final year = int.parse('20$yearStr');
+//
+//         final monthMap = {
+//           'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+//           'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+//         };
+//         final month = monthMap[monthStr] ?? 1;
+//
+//         return DateTime(year, month, day);
+//       } else if (format == 'DD/MM/YY') {
+//         // Format: 20/09/25
+//         final parts = dateStr.split('/');
+//         final day = int.parse(parts[0]);
+//         final month = int.parse(parts[1]);
+//         final year = int.parse('20${parts[2]}');
+//
+//         return DateTime(year, month, day);
+//       } else if (format == 'DD-MM-YYYY') {
+//         // Format: 20-09-2025
+//         final parts = dateStr.split('-');
+//         final day = int.parse(parts[0]);
+//         final month = int.parse(parts[1]);
+//         final year = int.parse(parts[2]);
+//
+//         return DateTime(year, month, day);
+//       } else if (format == 'DD-MM-YY') {
+//         // Format: 20-09-25
+//         final parts = dateStr.split('-');
+//         final day = int.parse(parts[0]);
+//         final month = int.parse(parts[1]);
+//         final year = int.parse('20${parts[2]}');
+//
+//         return DateTime(year, month, day);
+//       }
+//
+//       // Fallback to current date if parsing fails
+//       return DateTime.now();
+//     } catch (e) {
+//       print('Error parsing date: $dateStr with format: $format');
+//       return DateTime.now();
+//     }
+//   }
 }
