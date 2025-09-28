@@ -14,13 +14,37 @@ class FrequentMerchantsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (transactions.isEmpty) {
-      return const Center(child: Text('No transaction data available'));
+    final scheme = Theme.of(context).colorScheme;
+
+    // Filter for debit transactions only
+    final debitTransactions = transactions.where((t) => t.type == 'debit').toList();
+
+    if (debitTransactions.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.sentiment_dissatisfied,
+              size: 48,
+              color: scheme.onSurface.withOpacity(0.3),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No data available',
+              style: TextStyle(
+                color: scheme.onSurface.withOpacity(0.6),
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     // Calculate merchant frequency and spending
     final Map<String, List<Transaction>> merchantData = {};
-    for (var transaction in transactions) {
+    for (var transaction in debitTransactions) {
       if (!merchantData.containsKey(transaction.merchant)) {
         merchantData[transaction.merchant] = [];
       }
@@ -34,64 +58,80 @@ class FrequentMerchantsList extends StatelessWidget {
       final count = merchantTransactions.length;
       final total = merchantTransactions.fold<double>(
           0, (sum, transaction) => sum + transaction.amount);
-      final average = total / count;
 
-      // Find most recent transaction date
-      final mostRecent = merchantTransactions
-          .map((t) => t.dateTime)
-          .reduce((a, b) => a.isAfter(b) ? a : b);
+      // Calculate median spend
+      final amounts = merchantTransactions.map((t) => t.amount).toList()..sort();
+      final median = amounts.length % 2 == 0
+          ? (amounts[amounts.length ~/ 2 - 1] + amounts[amounts.length ~/ 2]) / 2
+          : amounts[amounts.length ~/ 2];
 
       return {
         'name': merchantName,
         'count': count,
         'total': total,
-        'average': average,
-        'lastTransaction': mostRecent,
+        'median': median,
       };
     }).toList();
 
-    // Sort by frequency (most frequent first)
-    merchants.sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+    // Sort by frequency first (highest first), then by total amount for same frequency
+    merchants.sort((a, b) {
+      final countA = a['count'] as int;
+      final countB = b['count'] as int;
+
+      if (countA != countB) {
+        return countB.compareTo(countA); // Higher frequency first
+      }
+
+      // If same frequency, sort by total amount (higher first)
+      final totalA = a['total'] as double;
+      final totalB = b['total'] as double;
+      return totalB.compareTo(totalA);
+    });
 
     // Take top merchants based on displayCount
     final topMerchants = merchants.take(displayCount).toList();
 
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: topMerchants.length,
-      itemBuilder: (context, index) {
+    return Column(
+      children: List.generate(topMerchants.length, (index) {
         final merchant = topMerchants[index];
         final name = merchant['name'] as String;
         final count = merchant['count'] as int;
         final total = merchant['total'] as double;
-        final average = merchant['average'] as double;
-        final lastDate = merchant['lastTransaction'] as DateTime;
+        final median = merchant['median'] as double;
 
-        // Calculate days since last transaction
-        final daysSince = DateTime.now().difference(lastDate).inDays;
-
-        return Card(
-          elevation: 2,
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.primary.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: scheme.outline.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
             child: Row(
               children: [
-                // Circle with count
+                // Transaction count circle
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.blue.withOpacity(0.8),
+                    color: scheme.primary.withOpacity(0.3),
+                    border: Border.all(
+                      color: scheme.primary.withOpacity(0.3),
+                      width: 1,
+                    ),
                   ),
                   child: Center(
                     child: Text(
-                      count.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      '$count',
+                      style: TextStyle(
+                        color: scheme.primary,
                         fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
                     ),
                   ),
@@ -104,85 +144,48 @@ class FrequentMerchantsList extends StatelessWidget {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: scheme.onSurface,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RichText(
-                              text: TextSpan(
-                                style: DefaultTextStyle.of(context).style,
-                                children: [
-                                  const TextSpan(
-                                    text: 'Total: ',
-                                    style: TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: '₹${total.toStringAsFixed(2)}',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: RichText(
-                              text: TextSpan(
-                                style: DefaultTextStyle.of(context).style,
-                                children: [
-                                  const TextSpan(
-                                    text: 'Avg: ',
-                                    style: TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: '₹${average.toStringAsFixed(2)}',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 2),
+                      Text(
+                        'Median Spend - ${_formatCurrency(median)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: scheme.onSurface.withOpacity(0.6),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                // Days since last transaction
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Text(
-                    daysSince == 0
-                        ? 'Today'
-                        : daysSince == 1
-                        ? 'Yesterday'
-                        : '$daysSince days ago',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[700],
-                    ),
+                // Total amount
+                Text(
+                  _formatCurrency(total),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: scheme.onSurface,
                   ),
                 ),
               ],
             ),
           ),
         );
-      },
+      }),
     );
+  }
+
+  String _formatCurrency(double value) {
+    if (value == 0) return '₹0';
+    if (value >= 1000) {
+      return '₹${(value / 1000).toStringAsFixed(value % 1000 == 0 ? 0 : 1)}k';
+    }
+    return '₹${value.toStringAsFixed(value % 1 == 0 ? 0 : 0)}';
   }
 }

@@ -15,7 +15,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String selectedBank = 'Axis Bank';
-  List<String> banks = ['Axis Bank', 'HDFC Bank', 'SBI', 'ICICI Bank'];
+  List<Map<String, String>> banks = [
+    {"name": "Axis Bank", "logo": "assets/banks/axis.jpg"},
+    {"name": "HDFC Bank", "logo": "assets/banks/hdfc.png"},
+    {"name": "SBI Bank", "logo": "assets/banks/sbi.jpg"},
+    {"name": "ICICI Bank", "logo": "assets/banks/icici.jpg"},
+    {"name": "Kotak Bank", "logo": "assets/banks/kotak.png"},
+    {"name": "Citi Union Bank", "logo": "assets/banks/cub.png"},
+  ];
   bool isLoading = false;
 
   final PermissionService _permissionService = PermissionService();
@@ -60,14 +67,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       TextSpan(
                         text: 'X',
-                        style: GoogleFonts.bagelFatOne(
+                        style: TextStyle(
+                          fontFamily: 'BagelFatOne',
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       TextSpan(
                         text: 'pense',
-                        style: GoogleFonts.cherryBombOne(
-                          fontWeight: FontWeight.w100// or Theme.of(context).colorScheme.onBackground
+                        style: TextStyle(
+                          fontFamily: 'CherryBombOne',
+                          fontWeight: FontWeight.w100,
+                          color: Theme.of(context).colorScheme.onBackground,
                         ),
                       ),
                     ],
@@ -109,15 +119,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     selectedBank = newValue!;
                   });
                 },
-                items: banks.map<DropdownMenuItem<String>>((String value) {
+                items: banks.map((bank) {
                   return DropdownMenuItem<String>(
-                    value: value,
+                    value: bank["name"], // ✅ Only use the name as value
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.account_balance, color: scheme.primary),
+                        Image.asset(
+                          bank["logo"]!,
+                          width: 24,
+                          height: 24,
+                        ),
                         const SizedBox(width: 8),
-                        Text(value),
+                        Text(bank["name"]!),
                       ],
                     ),
                   );
