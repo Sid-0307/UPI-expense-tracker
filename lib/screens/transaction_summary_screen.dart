@@ -1,9 +1,18 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:intl/intl.dart';
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:upi_expense_tracker/models/transaction.dart';
 import 'package:upi_expense_tracker/widgets/daily_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/weekday_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/compact_date_selector.dart';
 import 'package:upi_expense_tracker/widgets/frequent_merchant_list.dart';
+import 'package:excel/excel.dart';
 import 'package:upi_expense_tracker/widgets/summary_cards.dart';
 import 'package:upi_expense_tracker/widgets/transaction_list_item.dart';
 import 'package:upi_expense_tracker/widgets/spend_distribution_chart.dart';
@@ -194,6 +203,211 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         .length;
   }
 
+  Future<void> _showDownloadNotification(String filePath, String fileName) async {
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'download_channel',
+      'Downloads',
+      channelDescription: 'Notifications for downloaded files',
+      importance: Importance.high,
+      priority: Priority.high,
+      showWhen: true,
+      icon: '@mipmap/ic_launcher',
+    );
+
+    const NotificationDetails notificationDetails = NotificationDetails(
+      android: androidDetails,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      'Excel Download Succesfully',
+      '$fileName',
+      notificationDetails,
+      payload: filePath,
+    );
+  }
+
+  Future<void> _exportToExcel() async {
+    final filteredTransactions = _applyCategoryFilter(_filteredTransactions);
+
+    // Create Excel file
+    var excel = Excel.createExcel();
+
+    // Rename default sheet to 'Transactions'
+    excel.rename('Sheet1', 'Transactions');
+    Sheet sheetObject = excel['Transactions'];
+
+    // Format dates
+    final dateFormat = DateFormat('dd MMM yyyy');
+    final startDateStr = dateFormat.format(_startDate);
+    final endDateStr = dateFormat.format(_endDate);
+
+    // Column widths
+    for (int i = 0; i < 5; i++) sheetObject.setColumnWidth(i, 30);
+
+    // Styles
+    CellStyle centerBold = CellStyle(bold: true, horizontalAlign: HorizontalAlign.Center);
+    CellStyle center = CellStyle(horizontalAlign: HorizontalAlign.Center);
+    CellStyle headerBg = CellStyle(bold: true, horizontalAlign: HorizontalAlign.Center, backgroundColorHex: ExcelColor.grey200);
+
+    // Title Row
+    sheetObject.appendRow([TextCellValue('Transaction Report')]);
+    sheetObject.merge(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0),
+      CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0),
+    );
+    sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).cellStyle = centerBold;
+
+    // Period Row
+    sheetObject.appendRow([TextCellValue('Period: $startDateStr to $endDateStr')]);
+    sheetObject.merge(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1),
+      CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 1),
+    );
+    sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).cellStyle = centerBold;
+
+    // Column headers
+    sheetObject.appendRow([
+      TextCellValue('S.No'),
+      TextCellValue('Merchant'),
+      TextCellValue('Amount'),
+      TextCellValue('Type'),
+      TextCellValue('Date & Time'),
+    ]);
+    for (int col = 0; col < 5; col++) {
+      sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 2)).cellStyle = headerBg;
+    }
+
+    // Transaction Data
+    for (int i = 0; i < filteredTransactions.length; i++) {
+      final t = filteredTransactions[i];
+      final dateTimeStr = DateFormat('dd MMM yyyy, hh:mm a').format(t.dateTime);
+
+      sheetObject.appendRow([
+        IntCellValue(i + 1),
+        TextCellValue(t.merchant),
+        DoubleCellValue(t.amount),
+        TextCellValue(t.type),
+        TextCellValue(dateTimeStr),
+      ]);
+
+      int currentRow = i + 3;
+      for (int col = 0; col < 5; col++) {
+        sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: currentRow)).cellStyle = center;
+      }
+    }
+
+    // Aggregated Sheet
+    Sheet aggSheet = excel['Aggregated Data'];
+    for (int i = 0; i < 5; i++) aggSheet.setColumnWidth(i, 30);
+
+    // Aggregated headers
+    aggSheet.appendRow([TextCellValue('Aggregated Transactions')]);
+    aggSheet.merge(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0),
+      CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 0),
+    );
+    aggSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).cellStyle = centerBold;
+
+    aggSheet.appendRow([TextCellValue('Period: $startDateStr to $endDateStr')]);
+    aggSheet.merge(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1),
+      CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 1),
+    );
+    aggSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).cellStyle = centerBold;
+
+    aggSheet.appendRow([
+      TextCellValue('S.No'),
+      TextCellValue('Merchant'),
+      TextCellValue('Total Amount'),
+      TextCellValue('Transaction Count'),
+      TextCellValue('Net Type'),
+    ]);
+    for (int col = 0; col < 5; col++) {
+      aggSheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 2)).cellStyle = headerBg;
+    }
+
+    // Aggregate by merchant
+    final Map<String, List<Transaction>> grouped = {};
+    for (var t in filteredTransactions) {
+      grouped.putIfAbsent(t.merchant, () => []).add(t);
+    }
+
+    int idx = 0;
+    grouped.entries.forEach((entry) {
+      final merchant = entry.key;
+      final transactions = entry.value;
+
+      double totalCredit = 0, totalDebit = 0;
+      for (var t in transactions) {
+        if (t.type == 'credit') totalCredit += t.amount;
+        else totalDebit += t.amount;
+      }
+      final netAmount = totalCredit - totalDebit;
+      final String finalType = netAmount >= 0 ? 'credit' : 'debit';
+      final double finalAmount = netAmount.abs();
+
+      aggSheet.appendRow([
+        IntCellValue(idx + 1),
+        TextCellValue(merchant),
+        DoubleCellValue(finalAmount),
+        IntCellValue(transactions.length),
+        TextCellValue(finalType),
+      ]);
+
+      int currentRow = idx + 3;
+      for (int col = 0; col < 5; col++) {
+        aggSheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: currentRow)).cellStyle = center;
+      }
+
+      idx += 1;
+    });
+
+    // Save the file
+    try {
+      if (Platform.isAndroid) {
+        final status = await Permission.storage.request();
+        if (!status.isGranted) {
+          final manageStatus = await Permission.manageExternalStorage.request();
+          if (!manageStatus.isGranted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Storage permission denied')));
+            return;
+          }
+        }
+        await Permission.notification.request();
+      }
+
+      Directory? directory;
+      if (Platform.isAndroid) {
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) directory = await getExternalStorageDirectory();
+      } else if (Platform.isIOS) {
+        directory = await getApplicationDocumentsDirectory();
+      } else {
+        directory = await getDownloadsDirectory();
+      }
+
+      if (directory == null) throw Exception('Could not access folder');
+
+      final fileName = 'Xpense(${dateFormat.format(_startDate)}-${dateFormat.format(_endDate)}).xlsx';
+      final filePath = '${directory.path}/$fileName';
+
+      final fileBytes = excel.save();
+      if (fileBytes != null) {
+        File(filePath)
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(fileBytes);
+
+        await _showDownloadNotification(filePath, fileName);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error exporting Excel: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Sort transactions by date (newest first)
@@ -356,16 +570,43 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
 
   Widget _buildOverviewTab(double horizontalPadding, bool isSmallScreen) {
     final filteredTransactions = _applyCategoryFilter(_filteredTransactions);
-
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: SingleChildScrollView(
         child: Padding(
-          padding: EdgeInsets.all(horizontalPadding),
+          padding: EdgeInsets.only(right: horizontalPadding,left: horizontalPadding,bottom: horizontalPadding),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SummaryCards(transactions: filteredTransactions),
+              // Export button
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0,vertical: 16.0),
+                  child: ElevatedButton.icon(
+                    onPressed: _exportToExcel,
+                    icon: Icon(Icons.file_download, color: scheme.onPrimary),
+                    label: Text(
+                      'Export to Excel',
+                      style: TextStyle(color: scheme.onPrimary),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: scheme.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8), // reduced from default 8–12
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SummaryCards(
+                transactions: filteredTransactions,
+                startDate: _startDate,
+                endDate: _endDate,
+              ),
             ],
           ),
         ),
@@ -764,10 +1005,10 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.15) : scheme.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? color : scheme.outlineVariant,
-            width: isSelected ? 2 : 1,
-          ),
+          // border: Border.all(
+          //   color: isSelected ? color : scheme.outlineVariant,
+          //   width: isSelected ? 2 : 1,
+          // ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

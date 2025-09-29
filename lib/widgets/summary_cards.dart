@@ -5,10 +5,14 @@ import 'package:upi_expense_tracker/utils/category_utils.dart';
 
 class SummaryCards extends StatefulWidget {
   final List<Transaction> transactions;
+  final DateTime startDate;
+  final DateTime endDate;
 
   const SummaryCards({
     Key? key,
     required this.transactions,
+    required this.startDate,
+    required this.endDate,
   }) : super(key: key);
 
   @override
@@ -26,7 +30,7 @@ class _SummaryCardsState extends State<SummaryCards> {
 
     // Calculate all metrics
     final metrics = _calculateMetrics();
-    final symbol = metrics.totalSpent < 0 ? '' : '+ ';
+    final symbol = metrics.totalSpent <= 0 ? '' : '+ ';
     final currencyFormat = NumberFormat.currency(
     symbol: '₹',
     decimalDigits: 2,
@@ -320,8 +324,10 @@ class _SummaryCardsState extends State<SummaryCards> {
 
 
     // Basic metrics
-    final totalSpent = credits.fold<double>(0, (sum, t) => sum + t.amount) - debits.fold<double>(0, (sum, t) => sum + t.amount);
-    final transactionCount = debits.length;
+    final debitSpent = debits.fold<double>(0, (sum, t) => sum + t.amount);
+    final creditEarned =  credits.fold<double>(0, (sum, t) => sum + t.amount);
+    final totalSpent =  creditEarned - debitSpent;
+    final transactionCount = widget.transactions.length;
 
     // Median spend
     final amounts = debits.map((t) => t.amount).toList()..sort();
@@ -335,9 +341,8 @@ class _SummaryCardsState extends State<SummaryCards> {
     final debitDates = debits
         .map((t) => DateTime(t.dateTime.year, t.dateTime.month, t.dateTime.day))
         .toSet();
-    final firstDate = widget.transactions.map((t) => t.dateTime).reduce((a, b) => a.isBefore(b) ? a : b);
-    final lastDate = widget.transactions.map((t) => t.dateTime).reduce((a, b) => a.isAfter(b) ? a : b);
-    final totalDays = lastDate.difference(firstDate).inDays + 1;
+    print(debitDates);
+    final totalDays = widget.endDate.difference(widget.startDate).inDays;
     final nonSpendDays = totalDays - debitDates.length;
 
     // Highest spend
@@ -388,7 +393,7 @@ class _SummaryCardsState extends State<SummaryCards> {
       double top3Amount = 0;
       for (int i = 0; i < 3 && i < merchantList.length; i++) {
         final entry = merchantList[i];
-        final percentage = entry.value / totalSpent;
+        final percentage = entry.value / debitSpent;
         topMerchants.add(_MerchantData(
           name: entry.key.length > 15 ? '${entry.key.substring(0, 15)}...' : entry.key,
           amount: entry.value,
@@ -399,8 +404,8 @@ class _SummaryCardsState extends State<SummaryCards> {
 
       // Add "Others" if there are more than 3 merchants
       if (merchantList.length > 3) {
-        final othersAmount = totalSpent - top3Amount;
-        final othersPercentage = othersAmount / totalSpent;
+        final othersAmount = debitSpent - top3Amount;
+        final othersPercentage = othersAmount / debitSpent;
         topMerchants.add(_MerchantData(
           name: 'Others',
           amount: othersAmount,
@@ -419,14 +424,14 @@ class _SummaryCardsState extends State<SummaryCards> {
         weekdaySpend += t.amount;
       }
     }
-    final weekdayPercentage = totalSpent > 0 ? (weekdaySpend / totalSpent) * 100.0 : 0.0;
-    final weekendPercentage = totalSpent > 0 ? (weekendSpend / totalSpent) * 100.0 : 0.0;
+    final weekdayPercentage = debitSpent > 0 ? (weekdaySpend / debitSpent) * 100.0 : 0.0;
+    final weekendPercentage = debitSpent > 0 ? (weekendSpend / debitSpent) * 100.0 : 0.0;
 
     // Big spends (> ₹1000)
     final bigSpends = debits.where((t) => t.amount > 1000).toList();
     final bigSpendsCount = bigSpends.length;
     final bigSpendsAmount = bigSpends.fold<double>(0, (sum, t) => sum + t.amount);
-    final bigSpendsPercentage = totalSpent > 0 ? (bigSpendsAmount / totalSpent) * 100.0 : 0.0;
+    final bigSpendsPercentage = debitSpent > 0 ? (bigSpendsAmount / debitSpent) * 100.0 : 0.0;
 
     return _MetricsData(
       totalSpent: totalSpent,
