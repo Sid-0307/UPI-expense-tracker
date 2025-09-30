@@ -1,5 +1,8 @@
+import 'dart:ffi';
 import 'dart:io';
+import 'dart:ui';
 
+import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -12,7 +15,7 @@ import 'package:upi_expense_tracker/widgets/daily_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/weekday_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/compact_date_selector.dart';
 import 'package:upi_expense_tracker/widgets/frequent_merchant_list.dart';
-import 'package:excel/excel.dart';
+import 'package:excel/excel.dart' hide Border;
 import 'package:upi_expense_tracker/widgets/summary_cards.dart';
 import 'package:upi_expense_tracker/widgets/transaction_list_item.dart';
 import 'package:upi_expense_tracker/widgets/spend_distribution_chart.dart';
@@ -20,6 +23,9 @@ import 'package:upi_expense_tracker/widgets/hourly_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/cumulative_spend_chart.dart';
 import 'package:upi_expense_tracker/utils/category_utils.dart';
 import 'package:upi_expense_tracker/screens/merchant_manager_screen.dart';
+
+import '../services/merchant_store.dart';
+import '../utils/date_formatter.dart';
 
 class TransactionSummaryScreen extends StatefulWidget {
   final List<Transaction> transactions;
@@ -45,6 +51,8 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   // Sorting options
   String _aggregateSortBy = 'frequency_high'; // frequency_high, amount_high
   String _splitSortBy = 'amount_high'; // amount_high
+  Transaction? _selectedTransaction;
+  SpendCategory? _editingCategory;
 
   @override
   void initState() {
@@ -436,7 +444,39 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
             fontSize: isSmallScreen ? 18 : 20,
           ),
         ),
+        centerTitle: true,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.manage_accounts),
+            onPressed: () {
+              final uniqueMerchants = _applyCategoryFilter(widget.transactions)
+                  .map((t) => t.merchant)
+                  .toSet()
+                  .toList()
+                ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+              Navigator.of(context).push(
+                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      MerchantManagerScreen(knownMerchants: uniqueMerchants),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    const begin = Offset(1.0, 0.0);
+                    const end = Offset.zero;
+                    const curve = Curves.easeInOut;
+                    var tween = Tween(begin: begin, end: end).chain(
+                      CurveTween(curve: curve),
+                    );
+                    var offsetAnimation = animation.drive(tween);
+                    return SlideTransition(
+                      position: offsetAnimation,
+                      child: child,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: widget.transactions.isEmpty
           ? _buildEmptyState(isSmallScreen)
@@ -714,53 +754,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                   child: _sectionTitle(
                       'Spend Distribution (Pie)', isSmallScreen),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    final uniqueMerchants = _applyCategoryFilter(
-                        widget.transactions)
-                        .map((t) => t.merchant)
-                        .toSet()
-                        .toList()
-                      ..sort((a, b) =>
-                          a.toLowerCase().compareTo(b.toLowerCase()));
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => MerchantManagerScreen(
-                            knownMerchants: uniqueMerchants),
-                      ),
-                    );
-                  },
-                  icon: Icon(
-                    Icons.manage_accounts,
-                    size: isSmallScreen ? 16 : 20,
-                    color: Theme
-                        .of(context)
-                        .colorScheme
-                        .surface,
-                  ),
-                  label: Text(
-                    'Manage',
-                    style: TextStyle(
-                      fontSize: isSmallScreen ? 12 : 16,
-                      color: Theme
-                          .of(context)
-                          .colorScheme
-                          .surface,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme
-                        .of(context)
-                        .colorScheme
-                        .primary,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isSmallScreen ? 8 : 12,
-                      vertical: isSmallScreen ? 6 : 8,
-                    ),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
               ],
             ),
             SizedBox(height: isSmallScreen ? 6 : 8),
@@ -779,118 +772,409 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     );
   }
 
+  Widget _buildEditableTransactionItem(Transaction transaction, ColorScheme scheme, bool showTransactionCount) {
+    final category = _editingCategory ?? getCategoryForMerchant(transaction.merchant);
+    final categoryColor = category == SpendCategory.others
+        ? getCategoryColor(category, colorScheme: scheme)
+        : getCategoryColor(category);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8,),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: scheme.outlineVariant.withOpacity(0.5),
+            width: 1,
+          ),
+          // Left accent border
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).brightness == Brightness.light
+                  ? scheme.primary.withOpacity(0.12)
+                  : scheme.primary.withOpacity(0.12),
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Left colored accent
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                width: 5,
+                decoration: BoxDecoration(
+                  color: categoryColor,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    bottomLeft: Radius.circular(20),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16.0,12,12,12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      // Transaction details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    transaction.merchant,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (showTransactionCount && transaction.transactionCount != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: scheme.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: scheme.primary.withOpacity(0.3),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${transaction.transactionCount}x',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: scheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              DateFormatter.formatDateTime(transaction.dateTime),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // Amount
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '₹${transaction.amount.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: transaction.type == 'debit'
+                                  ? Colors.red[700]
+                                  : Colors.green[700],
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            transaction.type,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Category Dropdown
+                  Row(
+                    children: [
+                      // Category Dropdown (flex: 5)
+                      Expanded(
+                        flex: 7,
+                        child: DropdownButtonFormField2<SpendCategory>(
+                          value: _editingCategory ?? category,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.fromLTRB(0,12,8,12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: scheme.outlineVariant),
+                            ),
+                          ),
+                          onChanged: (v) => setState(() => _editingCategory = v),
+                          items: SpendCategory.values.map((c) => DropdownMenuItem(
+                            value: c,
+                            child: Row(
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: getCategoryColor(c, colorScheme: scheme).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(
+                                    getCategoryIcon(c),
+                                    color: getCategoryColor(c, colorScheme: scheme),
+                                    size: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    getCategoryName(c),
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )).toList(),
+                          dropdownStyleData: DropdownStyleData(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              color: scheme.surface,
+                            ),
+                            maxHeight: 200,
+                          ),
+                        )
+                        ,
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Cancel Button (flex: 2.5)
+                      Expanded(
+                        flex: 2,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            setState(() => _selectedTransaction = null);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Icon(Icons.close, size: 18),
+                        ),
+                      ),
+
+                      const SizedBox(width: 8),
+
+                      // Save Button (flex: 2.5)
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            if (_editingCategory != null) {
+                              final store = MerchantStore.instance;
+                              await store.upsertMapping(
+                                transaction.merchant,
+                                _editingCategory!,
+                              );
+                              setState(() => _selectedTransaction = null);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(Icons.check_circle, color: Colors.white),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Updated ${transaction.merchant} to ${getCategoryName(_editingCategory!)}',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: Colors.green[600],
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: scheme.primary,
+                            foregroundColor: scheme.onPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child:  Icon(Icons.check, size: 18,color: scheme.onPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTransactionsTab() {
     final displayTransactions = _isAggregated
         ? _aggregatedTransactions
         : _applyCategoryFilter(_filteredTransactions);
     final scheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // View toggle and sort toggle
-          Row(
-            children: [
-              // View Toggle Button
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _toggleAggregation,
-                  icon: Icon(
-                    _isAggregated ? Icons.splitscreen : Icons.group_work,
-                    size: 18,
-                    color: scheme.onPrimary, // Set icon color to white
-                  ),
-                  label: Text(_isAggregated ? 'Split View' : 'Aggregate View'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    foregroundColor: scheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ),
-              ..._isAggregated
-                  ? [
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _aggregateSortBy = _aggregateSortBy == 'frequency_high'
-                            ? 'amount_high'
-                            : 'frequency_high';
-                        _updateAggregatedTransactions();
-                      });
-                    },
-                    icon: Icon(
-                      _aggregateSortBy != 'frequency_high'
-                          ? Icons.trending_up
-                          : Icons.attach_money,
-                      size: 18,
-                      color: scheme.onPrimary,
-                    ),
-                    label: Text(
-                      _aggregateSortBy != 'frequency_high'
-                          ? 'By Frequency'
-                          : 'By Amount',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: scheme.primary,
-                      foregroundColor: scheme.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+    return Stack(
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.translucent, // ensures taps on empty space are caught
+          onTap: () {
+            if (_selectedTransaction != null) {
+              setState(() => _selectedTransaction = null);
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // View toggle and sort toggle
+                Row(
+                  children: [
+                    // View Toggle Button
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _toggleAggregation,
+                        icon: Icon(
+                          _isAggregated ? Icons.splitscreen : Icons.group_work,
+                          size: 18,
+                          color: scheme.onPrimary, // Set icon color to white
+                        ),
+                        label: Text(_isAggregated ? 'Split View' : 'Aggregate View'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: scheme.primary,
+                          foregroundColor: scheme.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    ..._isAggregated
+                        ? [
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _aggregateSortBy = _aggregateSortBy == 'frequency_high'
+                                  ? 'amount_high'
+                                  : 'frequency_high';
+                              _updateAggregatedTransactions();
+                            });
+                          },
+                          icon: Icon(
+                            _aggregateSortBy != 'frequency_high'
+                                ? Icons.trending_up
+                                : Icons.attach_money,
+                            size: 18,
+                            color: scheme.onPrimary,
+                          ),
+                          label: Text(
+                            _aggregateSortBy != 'frequency_high'
+                                ? 'By Frequency'
+                                : 'By Amount',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: scheme.primary,
+                            foregroundColor: scheme.onPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ]
+                        : [],
+
+                  ],
                 ),
-              ]
-                  : [],
 
-            ],
-          ),
+                const SizedBox(height: 16),
 
-          const SizedBox(height: 16),
-
-          // Transaction List
-          Expanded(
-            child: displayTransactions.isEmpty
-                ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.receipt_long, size: 64, color: scheme.onSurfaceVariant),
-                  const SizedBox(height: 16),
-                  Text(
-                    _selectedCategories.isEmpty
-                        ? 'No transactions in selected period'
-                        : 'No transactions found for selected category',
-                    style: TextStyle(
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 16,
+                // Transaction List
+                Expanded(
+                  child: displayTransactions.isEmpty
+                      ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.receipt_long, size: 64, color: scheme.onSurfaceVariant),
+                        const SizedBox(height: 16),
+                        Text(
+                          _selectedCategories.isEmpty
+                              ? 'No transactions in selected period'
+                              : 'No transactions found for selected category',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            )
-                : ListView.builder(
+                  )
+                      : ListView.builder(
               itemCount: displayTransactions.length,
               itemBuilder: (context, index) {
-                return TransactionListItem(
-                  transaction: displayTransactions[index],
-                  isCurrentMonth: displayTransactions[index].isFromCurrentMonth(),
-                  showTransactionCount: _isAggregated,
-                );
-              },
-            ),
+              final transaction = displayTransactions[index];
+              final isSelected = _selectedTransaction == transaction;
+
+              return Opacity(
+                opacity: _selectedTransaction == null || isSelected ? 1.0 : 0.3,
+                child: IgnorePointer(
+          ignoring: _selectedTransaction != null && !isSelected,
+          child: isSelected
+            ? _buildEditableTransactionItem(transaction, scheme,_isAggregated)
+              : TransactionListItem(
+          transaction: transaction,
+          isCurrentMonth: transaction.isFromCurrentMonth(),
+          showTransactionCount: _isAggregated,
+          onTap: () {
+              setState(() {
+                _selectedTransaction = transaction;
+                _editingCategory = getCategoryForMerchant(transaction.merchant);
+              });
+            },
           ),
-        ],
-      ),
-    );
+                ),
+              );},),
+              ),],),),
+        ),
+    ],);
   }
 
   Widget _buildViewToggleButton(ColorScheme scheme, bool isSmallScreen) {
