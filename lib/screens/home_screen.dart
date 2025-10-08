@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
     {"name": "ICICI Bank", "logo": "assets/banks/icici.jpg"},
     {"name": "Kotak Bank", "logo": "assets/banks/kotak.png"},
     {"name": "Citi Union Bank", "logo": "assets/banks/cub.png"},
+    {"name": "Canara Bank","logo":"assets/banks/canara.png"}
   ];
   bool isLoading = false;
   bool isInitializing = true;

@@ -39,6 +39,9 @@ class SmsService {
         } else if (bankName == 'SBI Bank' &&
             message.body!.contains('SBI')) {
           transaction = _parseSBISms(message.body!,message.date!);
+        } else if (bankName == 'Canara Bank' &&
+            message.body!.contains('Canara Bank')) {
+          transaction = _parseCanaraBankSms(message.body!,message.date!);
         }
         if (transaction != null) {
           parsedTransactions.add(transaction);
@@ -387,69 +390,60 @@ class SmsService {
     }
   }
 
-// // Helper method to parse different date formats
-//   DateTime _parseDateString(String dateStr, String format) {
-//     try {
-//       if (format == 'DD-MMM-YY') {
-//         // Format: 19-Sep-25
-//         final parts = dateStr.split('-');
-//         final day = int.parse(parts[0]);
-//         final year = int.parse('20${parts[2]}');
-//
-//         final monthMap = {
-//           'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-//           'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-//         };
-//         final month = monthMap[parts[1]] ?? 1;
-//
-//         return DateTime(year, month, day);
-//       } else if (format == 'DDMMMYY') {
-//         // Format: 08Jul25
-//         final dayStr = dateStr.substring(0, 2);
-//         final monthStr = dateStr.substring(2, 5);
-//         final yearStr = dateStr.substring(5, 7);
-//
-//         final day = int.parse(dayStr);
-//         final year = int.parse('20$yearStr');
-//
-//         final monthMap = {
-//           'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-//           'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-//         };
-//         final month = monthMap[monthStr] ?? 1;
-//
-//         return DateTime(year, month, day);
-//       } else if (format == 'DD/MM/YY') {
-//         // Format: 20/09/25
-//         final parts = dateStr.split('/');
-//         final day = int.parse(parts[0]);
-//         final month = int.parse(parts[1]);
-//         final year = int.parse('20${parts[2]}');
-//
-//         return DateTime(year, month, day);
-//       } else if (format == 'DD-MM-YYYY') {
-//         // Format: 20-09-2025
-//         final parts = dateStr.split('-');
-//         final day = int.parse(parts[0]);
-//         final month = int.parse(parts[1]);
-//         final year = int.parse(parts[2]);
-//
-//         return DateTime(year, month, day);
-//       } else if (format == 'DD-MM-YY') {
-//         // Format: 20-09-25
-//         final parts = dateStr.split('-');
-//         final day = int.parse(parts[0]);
-//         final month = int.parse(parts[1]);
-//         final year = int.parse('20${parts[2]}');
-//
-//         return DateTime(year, month, day);
-//       }
-//
-//       // Fallback to current date if parsing fails
-//       return DateTime.now();
-//     } catch (e) {
-//       print('Error parsing date: $dateStr with format: $format');
-//       return DateTime.now();
-//     }
-//   }
+  // Parse Canara Bank SMS format
+  Transaction? _parseCanaraBankSms(String smsBody, DateTime smsDate) {
+    // Example formats:
+    // Your a/c no. XX7313 has been credited with Rs.1000.00 on 8/28/25 10:56 PM from a/c no. XX7276 (UPI Ref no 908767488967)-Canara Bank
+    // An amount of INR 45.00 has been DEBITED to your account XXX313 on 01/10/2025. Total Avail.bal INR 1,136.43.Dial 1930 to report cyber fraud - Canara Bank
+
+    try {
+      // Extract amount (handle both Rs. and INR formats)
+      RegExp amountRegex = RegExp(r'(?:Rs\.|INR)\s*(\d+(?:\.\d+)?)');
+      Match? amountMatch = amountRegex.firstMatch(smsBody);
+      if (amountMatch == null) return null;
+      final double amount = double.parse(amountMatch.group(1)!);
+
+      // Determine transaction type
+      String type = 'debit';
+      if (smsBody.contains('credited with') ||
+          smsBody.contains('has been credited')) {
+        type = 'credit';
+      }
+
+      final DateTime dateTime = smsDate;
+
+      // Extract merchant name based on transaction type
+      String merchant = "Unknown";
+
+      if (type == 'credit') {
+        // For credit transactions: extract sender account info
+        final RegExp merchantRegex = RegExp(r'from a/c no\.\s*(XX?\d+)');
+        final merchantMatch = merchantRegex.firstMatch(smsBody);
+        if (merchantMatch != null) {
+          merchant = "Account ${merchantMatch.group(1)!}";
+        }
+      } else {
+        // For debit transactions: merchant is typically not specified in the given format
+        // Check if there's any UPI reference or account info
+        final RegExp upiRegex = RegExp(r'UPI Ref no\s*(\d+)');
+        final upiMatch = upiRegex.firstMatch(smsBody);
+        if (upiMatch != null) {
+          merchant = "UPI Transaction";
+        } else {
+          merchant = "Debit Transaction";
+        }
+      }
+
+      return Transaction(
+        amount: amount,
+        merchant: merchant,
+        dateTime: dateTime,
+        type: type,
+      );
+    } catch (e) {
+      print('Error parsing Canara Bank SMS: $e');
+      print('SMS content: $smsBody');
+      return null;
+    }
+  }
 }
