@@ -21,9 +21,11 @@ class TransactionListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final category = getCategoryForMerchant(transaction.merchant);
     final scheme = Theme.of(context).colorScheme;
-    final categoryColor = category == SpendCategory.others
-        ? getCategoryColor(category, colorScheme: scheme)
-        : getCategoryColor(category);
+    final categoryColor = hasCustomCategoryForMerchant(transaction.merchant)
+        ? getDisplayCategoryColorForMerchant(transaction.merchant, colorScheme: scheme)
+        : (category == SpendCategory.others
+            ? getCategoryColor(category, colorScheme: scheme)
+            : getCategoryColor(category));
 
     return GestureDetector(
       onTap: onTap,
@@ -117,13 +119,17 @@ class TransactionListItem extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                             Icon(
-                              getCategoryIcon(category),
+                              hasCustomCategoryForMerchant(transaction.merchant)
+                                  ? getDisplayCategoryIconForMerchant(transaction.merchant)
+                                  : getCategoryIcon(category),
                               size: 12,
                               color: categoryColor,
                             ),
                       const SizedBox(width: 4),
                       Text(
-                        getCategoryName(category),
+                        hasCustomCategoryForMerchant(transaction.merchant)
+                            ? getDisplayCategoryNameForMerchant(transaction.merchant)
+                            : getCategoryName(category),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: categoryColor,

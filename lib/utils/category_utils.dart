@@ -76,7 +76,7 @@ const Map<SpendCategory, CategoryInfo> kCategoryInfo = {
   SpendCategory.entertainment: CategoryInfo(
     category: SpendCategory.entertainment,
     name: 'Entertainment',
-    color: Color(0xFFFFCA28),
+    color: Color(0xFFFF9A28),
     icon: Icons.movie,
   ),
   SpendCategory.health: CategoryInfo(
@@ -155,6 +155,47 @@ IconData getCategoryIcon(Object category) {
     return category.icon;
   }
   return kCategoryInfo[category]!.icon;
+}
+
+// Unified display helpers for merchants (resolve to custom if present)
+bool hasCustomCategoryForMerchant(String merchant) {
+  return MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant) != null;
+}
+
+String getDisplayCategoryNameForMerchant(String merchant) {
+  final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant);
+  if (customId != null) {
+    final cc = CustomCategoryStore.instance
+        .getAllCustomCategories()
+        .firstWhere((c) => c.id == customId, orElse: () => CustomCategory(id: '', name: 'Custom', colorValue: const Color(0xFFBDBDBD).value, iconCodePoint: Icons.category.codePoint));
+    return cc.name;
+  }
+  final def = getCategoryForMerchant(merchant);
+  return getCategoryName(def);
+}
+
+Color getDisplayCategoryColorForMerchant(String merchant, {ColorScheme? colorScheme}) {
+  final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant);
+  if (customId != null) {
+    final cc = CustomCategoryStore.instance
+        .getAllCustomCategories()
+        .firstWhere((c) => c.id == customId, orElse: () => CustomCategory(id: '', name: 'Custom', colorValue: const Color(0xFFBDBDBD).value, iconCodePoint: Icons.category.codePoint));
+    return cc.color;
+  }
+  final def = getCategoryForMerchant(merchant);
+  return getCategoryColor(def, colorScheme: colorScheme);
+}
+
+IconData getDisplayCategoryIconForMerchant(String merchant) {
+  final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant);
+  if (customId != null) {
+    final cc = CustomCategoryStore.instance
+        .getAllCustomCategories()
+        .firstWhere((c) => c.id == customId, orElse: () => CustomCategory(id: '', name: 'Custom', colorValue: const Color(0xFFBDBDBD).value, iconCodePoint: Icons.category.codePoint));
+    return cc.icon;
+  }
+  final def = getCategoryForMerchant(merchant);
+  return getCategoryIcon(def);
 }
 
 // Get all categories (default + custom)

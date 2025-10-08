@@ -9,10 +9,13 @@ class MerchantStore extends ChangeNotifier {
   static final MerchantStore instance = MerchantStore._internal();
 
   late Map<String, SpendCategory> _merchantToCategory;
+  late Map<String, String> _merchantToCustomCategoryId; // merchant → customCategoryId
   static const String _storageKey = 'merchant_mappings';
+  static const String _storageKeyCustom = 'merchant_mappings_custom';
   bool _isInitialized = false;
 
   Map<String, SpendCategory> get mappings => Map.unmodifiable(_merchantToCategory);
+  Map<String, String> get customMappings => Map.unmodifiable(_merchantToCustomCategoryId);
 
   /// Initialize the store with saved data or defaults
   Future<void> initialize() async {
@@ -21,6 +24,7 @@ class MerchantStore extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedData = prefs.getString(_storageKey);
+      final savedCustom = prefs.getString(_storageKeyCustom);
 
       if (savedData != null) {
         // Load saved mappings
@@ -39,13 +43,43 @@ class MerchantStore extends ChangeNotifier {
         // Initialize with defaults if no saved data
         _initializeDefaults();
       }
+
+      if (savedCustom != null) {
+        final Map<String, dynamic> decodedCustom = jsonDecode(savedCustom);
+        _merchantToCustomCategoryId = {};
+        decodedCustom.forEach((key, value) {
+          _merchantToCustomCategoryId[key] = value as String;
+        });
+      } else {
+        _merchantToCustomCategoryId = {};
+      }
     } catch (e) {
       // If there's any error loading, fall back to defaults
       debugPrint('Error loading merchant mappings: $e');
       _initializeDefaults();
+      _merchantToCustomCategoryId = {};
     }
 
     _isInitialized = true;
+  }
+
+  Future<void> clearCustomCategoryForAllMerchants(String customCategoryId) async {
+    bool changed = false;
+
+    _merchantToCustomCategoryId.forEach((merchant, customId) {
+      if (customId == customCategoryId) {
+        _merchantToCustomCategoryId[merchant] = ''; // or remove the entry entirely
+        changed = true;
+      }
+    });
+
+    // Remove entries with empty string
+    _merchantToCustomCategoryId.removeWhere((_, v) => v.isEmpty);
+
+    if (changed) {
+      await _saveMappings();
+      notifyListeners();
+    }
   }
 
   /// Initialize with default mappings
@@ -68,6 +102,7 @@ class MerchantStore extends ChangeNotifier {
       'kirana': SpendCategory.groceries,
       'sangeetha': SpendCategory.food,
     };
+    _merchantToCustomCategoryId = {};
   }
 
   /// Save current mappings to SharedPreferences
@@ -83,6 +118,10 @@ class MerchantStore extends ChangeNotifier {
 
       final encoded = jsonEncode(toSave);
       await prefs.setString(_storageKey, encoded);
+
+      // Save custom mappings
+      final encodedCustom = jsonEncode(_merchantToCustomCategoryId);
+      await prefs.setString(_storageKeyCustom, encodedCustom);
     } catch (e) {
       debugPrint('Error saving merchant mappings: $e');
     }
@@ -95,6 +134,8 @@ class MerchantStore extends ChangeNotifier {
     // Exact match first
     final exact = _merchantToCategory[key];
     if (exact != null) return exact;
+    // If custom category mapping exists, do not fallback to default table
+    if (_merchantToCustomCategoryId.containsKey(key)) return null;
     // Fuzzy/substring match: allow mapping keys to act like keywords
     // e.g., mapping 'bikanervala' will match 'Bikanervala - Indiranagar'
     for (final entry in _merchantToCategory.entries) {
@@ -106,11 +147,37 @@ class MerchantStore extends ChangeNotifier {
     return null;
   }
 
+  String? lookupCustomCategoryIdForMerchant(String merchant) {
+    final key = _normalize(merchant);
+    if (_merchantToCustomCategoryId.containsKey(key)) {
+      return _merchantToCustomCategoryId[key];
+    }
+    // fuzzy
+    for (final entry in _merchantToCustomCategoryId.entries) {
+      if (key.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
   Future<void> upsertMapping(String merchant, SpendCategory category) async {
     final key = _normalize(merchant);
     if (key.isEmpty) return;
 
     _merchantToCategory[key] = category;
+    // Remove any custom mapping for this merchant to avoid conflicts
+    _merchantToCustomCategoryId.remove(key);
+    await _saveMappings();
+    notifyListeners();
+  }
+
+  Future<void> upsertCustomMapping(String merchant, String customCategoryId) async {
+    final key = _normalize(merchant);
+    if (key.isEmpty) return;
+    _merchantToCustomCategoryId[key] = customCategoryId;
+    // Remove any default mapping for this merchant to avoid conflicts
+    _merchantToCategory.remove(key);
     await _saveMappings();
     notifyListeners();
   }
@@ -118,6 +185,7 @@ class MerchantStore extends ChangeNotifier {
   Future<void> removeMapping(String merchant) async {
     final key = _normalize(merchant);
     _merchantToCategory.remove(key);
+    _merchantToCustomCategoryId.remove(key);
     await _saveMappings();
     notifyListeners();
   }

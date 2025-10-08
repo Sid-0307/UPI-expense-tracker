@@ -47,12 +47,13 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   late TabController _tabController;
   bool _isAggregated = false;
   List<Transaction> _aggregatedTransactions = [];
-  final Set<Object> _selectedCategories = {};
-  final Set<CategoryInfo> _selectedCategoryInfos = {};
+  final Set<Object> _selectedCategories = {}; // Can hold SpendCategory or CustomCategory
+  String? _selectedCustomFilterId; // Track selected custom category filter
 
   // Sorting options
   String _aggregateSortBy = 'frequency_high'; // frequency_high, amount_high
   String _splitSortBy = 'amount_high'; // amount_high
+  String? _editingCustomCategoryId;
   Transaction? _selectedTransaction;
   SpendCategory? _editingCategory;
 
@@ -175,18 +176,46 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   }
 
   List<Transaction> _applyCategoryFilter(List<Transaction> input) {
-    if (_selectedCategories.isEmpty) return input;
-    return input.where((t) =>
-        _selectedCategories.contains(getCategoryForMerchant(t.merchant)))
-        .toList();
+    if (_selectedCategories.isEmpty && _selectedCustomFilterId == null) return input;
+
+    return input.where((t) {
+      final merchant = t.merchant;
+      final store = MerchantStore.instance;
+
+      // Check if merchant has custom category mapping
+      final customId = store.lookupCustomCategoryIdForMerchant(merchant);
+
+      if (customId != null) {
+        // Merchant is mapped to custom category
+        return _selectedCustomFilterId == customId;
+      } else {
+        // Merchant uses default category
+        final defaultCategory = getCategoryForMerchant(merchant);
+        return _selectedCategories.contains(defaultCategory);
+      }
+    }).toList();
   }
 
   void _toggleCategory(SpendCategory category) {
     setState(() {
+      _selectedCustomFilterId = null; // Clear custom filter
       if (_selectedCategories.contains(category)) {
         _selectedCategories.remove(category);
       } else {
+        _selectedCategories.clear();
         _selectedCategories.add(category);
+      }
+      _updateAggregatedTransactions();
+    });
+  }
+
+  void _toggleCustomCategory(String customCategoryId) {
+    setState(() {
+      _selectedCategories.clear(); // Clear default filters
+      if (_selectedCustomFilterId == customCategoryId) {
+        _selectedCustomFilterId = null;
+      } else {
+        _selectedCustomFilterId = customCategoryId;
       }
       _updateAggregatedTransactions();
     });
@@ -218,6 +247,12 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         .map((t) => t.merchant)
         .toSet()
         .length;
+  }
+
+  String _editingDropdownValueFor(String merchant, SpendCategory current) {
+    final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant);
+    if (customId != null) return 'custom:' + customId;
+    return 'default:' + current.name;
   }
 
   Future<void> _showDownloadNotification(String filePath, String fileName) async {
@@ -469,7 +504,11 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                   await CustomCategoryStore.instance.addCategory(categoryName);
                   Navigator.of(context).pop();
 
-                  setState(() {}); // Refresh UI to show new category
+                  setState(() {
+                    _selectedTransaction = null;
+                    _editingCustomCategoryId = null; // ✅ reset
+                    _editingCategory = null;         // ✅ reset
+                  });// Refresh UI to show new category
 
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -635,7 +674,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
           SizedBox(height: isSmallScreen ? 2 : 4),
 
           // Category filters with responsive scrolling
-          // Category filters with responsive scrolling
           Padding(
             padding: EdgeInsets.fromLTRB(
                 horizontalPadding, 0, horizontalPadding, 0),
@@ -651,11 +689,12 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                       child: _buildCategoryFilterChip(
                         label: 'All',
                         icon: Icons.all_inclusive,
-                        isSelected: _selectedCategories.isEmpty,
+                        isSelected: _selectedCategories.isEmpty && _selectedCustomFilterId == null,
                         color: scheme.primary,
                         onTap: () {
                           setState(() {
                             _selectedCategories.clear();
+                            _selectedCustomFilterId = null;
                             _updateAggregatedTransactions();
                           });
                         },
@@ -674,19 +713,9 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                         child: _buildCategoryFilterChip(
                           label: getCategoryName(category),
                           icon: getCategoryIcon(category),
-                          isSelected: _selectedCategories.contains(category),
+                          isSelected: _selectedCategories.contains(category) && _selectedCustomFilterId == null,
                           color: categoryColor,
-                          onTap: () {
-                            setState(() {
-                              if (_selectedCategories.contains(category)) {
-                                _selectedCategories.remove(category);
-                              } else {
-                                _selectedCategories.clear();
-                                _selectedCategories.add(category);
-                              }
-                              _updateAggregatedTransactions();
-                            });
-                          },
+                          onTap: () => _toggleCategory(category),
                           isSmallScreen: isSmallScreen,
                           isVerySmallScreen: isVerySmallScreen,
                         ),
@@ -695,24 +724,44 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                     // Custom category buttons
                     ...CustomCategoryStore.instance.getAllCustomCategories().map((category) {
                       final categoryColor = getCategoryColor(category);
+                      final isSelected = _selectedCustomFilterId == category.id;
+
                       return Padding(
                         padding: const EdgeInsets.only(right: 8.0),
                         child: _buildCategoryFilterChip(
                           label: getCategoryName(category),
                           icon: getCategoryIcon(category),
-                          isSelected: _selectedCategories.contains(category),
+                          isSelected: isSelected,
                           color: categoryColor,
-                          onTap: () {
-                            setState(() {
-                              if (_selectedCategories.contains(category)) {
-                                _selectedCategories.remove(category);
-                              } else {
-                                _selectedCategories.clear();
-                                _selectedCategories.add(category);
-                              }
-                              _updateAggregatedTransactions();
-                            });
-                          },
+                          onTap: () => _toggleCustomCategory(category.id),
+                          // onLongPress: () {
+                          //   showDialog(
+                          //     context: context,
+                          //     builder: (ctx) => AlertDialog(
+                          //       title: const Text('Delete category?'),
+                          //       content: Text('Are you sure you want to delete "${category.name}"?'),
+                          //       actions: [
+                          //         TextButton(
+                          //           onPressed: () => Navigator.pop(ctx),
+                          //           child: const Text('Cancel'),
+                          //         ),
+                          //         TextButton(
+                          //           onPressed: () async {
+                          //             await CustomCategoryStore.instance.removeCategory(category.id);
+                          //             setState(() {
+                          //               if (_selectedCustomFilterId == category.id) _selectedCustomFilterId = null;
+                          //             });
+                          //             Navigator.pop(ctx);
+                          //             ScaffoldMessenger.of(context).showSnackBar(
+                          //               SnackBar(content: Text('${category.name} deleted')),
+                          //             );
+                          //           },
+                          //           child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                          //         ),
+                          //       ],
+                          //     ),
+                          //   );
+                          // },
                           isSmallScreen: isSmallScreen,
                           isVerySmallScreen: isVerySmallScreen,
                         ),
@@ -939,10 +988,28 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   }
 
   Widget _buildEditableTransactionItem(Transaction transaction, ColorScheme scheme, bool showTransactionCount) {
-    final category = _editingCategory ?? getCategoryForMerchant(transaction.merchant);
-    final categoryColor = category == SpendCategory.others
-        ? getCategoryColor(category, colorScheme: scheme)
-        : getCategoryColor(category);
+    Color categoryColor;
+
+    if (_editingCustomCategoryId != null) {
+      final cc = CustomCategoryStore.instance
+          .getAllCustomCategories()
+          .firstWhere(
+            (c) => c.id == _editingCustomCategoryId,
+        orElse: () => CustomCategory(
+          id: '',
+          name: 'Custom',
+          colorValue: const Color(0xFFBDBDBD).value,
+          iconCodePoint: Icons.category.codePoint,
+        ),
+      );
+      categoryColor = cc.color;
+    } else if (_editingCategory != null) {
+      categoryColor = getCategoryColor(_editingCategory!, colorScheme: scheme);
+    } else {
+      categoryColor = getDisplayCategoryColorForMerchant(transaction.merchant, colorScheme: scheme);
+    }
+
+    final category = getCategoryForMerchant(transaction.merchant);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8,),
@@ -957,7 +1024,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
             color: scheme.outlineVariant.withOpacity(0.5),
             width: 1,
           ),
-          // Left accent border
           boxShadow: [
             BoxShadow(
               color: Theme.of(context).brightness == Brightness.light
@@ -969,7 +1035,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         ),
         child: Stack(
           children: [
-            // Left colored accent
             Positioned(
               left: 0,
               top: 0,
@@ -992,7 +1057,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                   Row(
                     children: [
                       const SizedBox(width: 4),
-                      // Transaction details
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1046,7 +1110,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
 
                       const SizedBox(width: 12),
 
-                      // Amount
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
@@ -1076,14 +1139,12 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
 
                   const SizedBox(height: 12),
 
-                  // Category Dropdown
                   Row(
                     children: [
-                      // Category Dropdown (flex: 5)
                       Expanded(
                         flex: 7,
-                        child: DropdownButtonFormField2<SpendCategory>(
-                          value: _editingCategory ?? category,
+                        child: DropdownButtonFormField2<String>(
+                          value: _editingDropdownValueFor(transaction.merchant, _editingCategory ?? category),
                           isExpanded: true,
                           decoration: InputDecoration(
                             contentPadding: const EdgeInsets.fromLTRB(0,12,8,12),
@@ -1092,33 +1153,72 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                               borderSide: BorderSide(color: scheme.outlineVariant),
                             ),
                           ),
-                          onChanged: (v) => setState(() => _editingCategory = v),
-                          items: SpendCategory.values.map((c) => DropdownMenuItem(
-                            value: c,
-                            child: Row(
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: getCategoryColor(c, colorScheme: scheme).withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(6),
+                          onChanged: (v) => setState(() {
+                            if (v == null) return;
+                            if (v.startsWith('custom:')) {
+                              final id = v.substring('custom:'.length);
+                              _editingCategory = null;
+                              _editingCustomCategoryId = id;
+                            } else if (v.startsWith('default:')) {
+                              _editingCustomCategoryId = null;
+                              final name = v.substring('default:'.length);
+                              _editingCategory = SpendCategory.values.firstWhere((e) => e.name == name, orElse: () => SpendCategory.others);
+                            }
+                          }),
+                          items: [
+                            ...SpendCategory.values.map((c) => DropdownMenuItem<String>(
+                              value: 'default:${c.name}',
+                              child: Row(
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: getCategoryColor(c, colorScheme: scheme).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Icon(
+                                      getCategoryIcon(c),
+                                      color: getCategoryColor(c, colorScheme: scheme),
+                                      size: 14,
+                                    ),
                                   ),
-                                  child: Icon(
-                                    getCategoryIcon(c),
-                                    color: getCategoryColor(c, colorScheme: scheme),
-                                    size: 14,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      getCategoryName(c),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    getCategoryName(c),
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                ],
+                              ),
+                            )),
+                            ...CustomCategoryStore.instance.getAllCustomCategories().map((cc) => DropdownMenuItem<String>(
+                              value: 'custom:${cc.id}',
+                              child: Row(
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: cc.color.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Icon(
+                                      cc.icon,
+                                      color: cc.color,
+                                      size: 14,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          )).toList(),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      cc.name,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )),
+                          ],
                           dropdownStyleData: DropdownStyleData(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
@@ -1126,17 +1226,19 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                             ),
                             maxHeight: 200,
                           ),
-                        )
-                        ,
+                        ),
                       ),
                       const SizedBox(width: 8),
 
-                      // Cancel Button (flex: 2.5)
                       Expanded(
                         flex: 2,
                         child: OutlinedButton(
                           onPressed: () {
-                            setState(() => _selectedTransaction = null);
+                            setState(() {
+                              _selectedTransaction = null;
+                              _editingCustomCategoryId = null;
+                              _editingCategory = null;
+                            });
                           },
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1150,39 +1252,41 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
 
                       const SizedBox(width: 8),
 
-                      // Save Button (flex: 2.5)
                       Expanded(
                         flex: 2,
                         child: ElevatedButton(
                           onPressed: () async {
-                            if (_editingCategory != null) {
-                              final store = MerchantStore.instance;
-                              await store.upsertMapping(
-                                transaction.merchant,
-                                _editingCategory!,
-                              );
-                              setState(() => _selectedTransaction = null);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Row(
-                                    children: [
-                                      const Icon(Icons.check_circle, color: Colors.white),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Updated ${transaction.merchant} to ${getCategoryName(_editingCategory!)}',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  backgroundColor: Colors.green[600],
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                              );
+                            final store = MerchantStore.instance;
+                            if (_editingCustomCategoryId != null) {
+                              await store.upsertCustomMapping(transaction.merchant, _editingCustomCategoryId!);
+                            } else if (_editingCategory != null) {
+                              await store.upsertMapping(transaction.merchant, _editingCategory!);
                             }
+                            setState(() {
+                              _selectedTransaction = null;
+                              _editingCustomCategoryId = null;
+                              _editingCategory = null;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Row(
+                                  children: [
+                                    const Icon(Icons.check_circle, color: Colors.white),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Updated ${transaction.merchant}',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                backgroundColor: Colors.green[600],
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            );
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: scheme.primary,
@@ -1192,7 +1296,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child:  Icon(Icons.check, size: 18,color: scheme.onPrimary),
+                          child: Icon(Icons.check, size: 18, color: scheme.onPrimary),
                         ),
                       ),
                     ],
@@ -1215,10 +1319,14 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     return Stack(
       children: [
         GestureDetector(
-          behavior: HitTestBehavior.translucent, // ensures taps on empty space are caught
+          behavior: HitTestBehavior.translucent,
           onTap: () {
             if (_selectedTransaction != null) {
-              setState(() => _selectedTransaction = null);
+              setState(() {
+                _selectedTransaction = null;
+                _editingCustomCategoryId = null;
+                _editingCategory = null;
+              });
             }
           },
           child: Padding(
@@ -1226,17 +1334,15 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // View toggle and sort toggle
                 Row(
                   children: [
-                    // View Toggle Button
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: _toggleAggregation,
                         icon: Icon(
                           _isAggregated ? Icons.splitscreen : Icons.group_work,
                           size: 18,
-                          color: scheme.onPrimary, // Set icon color to white
+                          color: scheme.onPrimary,
                         ),
                         label: Text(_isAggregated ? 'Split View' : 'Aggregate View'),
                         style: ElevatedButton.styleFrom(
@@ -1286,13 +1392,11 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                       ),
                     ]
                         : [],
-
                   ],
                 ),
 
                 const SizedBox(height: 16),
 
-                // Transaction List
                 Expanded(
                   child: displayTransactions.isEmpty
                       ? Center(
@@ -1314,113 +1418,126 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                     ),
                   )
                       : ListView.builder(
-              itemCount: displayTransactions.length,
-              itemBuilder: (context, index) {
-              final transaction = displayTransactions[index];
-              final isSelected = _selectedTransaction == transaction;
+                    itemCount: displayTransactions.length,
+                    itemBuilder: (context, index) {
+                      final transaction = displayTransactions[index];
+                      final isSelected = _selectedTransaction == transaction;
 
-              return Opacity(
-                opacity: _selectedTransaction == null || isSelected ? 1.0 : 0.3,
-                child: IgnorePointer(
-          ignoring: _selectedTransaction != null && !isSelected,
-          child: isSelected
-            ? _buildEditableTransactionItem(transaction, scheme,_isAggregated)
-              : TransactionListItem(
-          transaction: transaction,
-          isCurrentMonth: transaction.isFromCurrentMonth(),
-          showTransactionCount: _isAggregated,
-          onTap: () {
-              setState(() {
-                _selectedTransaction = transaction;
-                _editingCategory = getCategoryForMerchant(transaction.merchant);
-              });
-            },
-          ),
+                      return Opacity(
+                        opacity: _selectedTransaction == null || isSelected ? 1.0 : 0.3,
+                        child: IgnorePointer(
+                          ignoring: _selectedTransaction != null && !isSelected,
+                          child: isSelected
+                              ? _buildEditableTransactionItem(transaction, scheme, _isAggregated)
+                              : TransactionListItem(
+                            transaction: transaction,
+                            isCurrentMonth: transaction.isFromCurrentMonth(),
+                            showTransactionCount: _isAggregated,
+                            onTap: () {
+                              setState(() {
+                                _selectedTransaction = transaction;
+                                final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(transaction.merchant);
+                                if (customId != null) {
+                                  _editingCustomCategoryId = customId;
+                                  _editingCategory = null;
+                                } else {
+                                  _editingCustomCategoryId = null;
+                                  _editingCategory = getCategoryForMerchant(transaction.merchant);
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              );},),
-              ),],),),
-        ),
-    ],);
-  }
-
-  Widget _buildViewToggleButton(ColorScheme scheme, bool isSmallScreen) {
-    return ElevatedButton.icon(
-      onPressed: _toggleAggregation,
-      icon: Icon(
-        _isAggregated ? Icons.splitscreen : Icons.group_work,
-        size: isSmallScreen ? 16 : 18,
-        color: scheme.onPrimary,
-      ),
-      label: Text(
-        _isAggregated ? 'Split View' : 'Aggregate View',
-        style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
-      ),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
-        padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  Widget _buildSortToggleButton(ColorScheme scheme, bool isSmallScreen) {
-    return ElevatedButton.icon(
-      onPressed: () {
-        setState(() {
-          _aggregateSortBy = _aggregateSortBy == 'frequency_high'
-              ? 'amount_high'
-              : 'frequency_high';
-          _updateAggregatedTransactions();
-        });
-      },
-      icon: Icon(
-        _aggregateSortBy != 'frequency_high'
-            ? Icons.trending_up
-            : Icons.attach_money,
-        size: isSmallScreen ? 16 : 18,
-        color: scheme.onPrimary,
-      ),
-      label: Text(
-        _aggregateSortBy != 'frequency_high'
-            ? 'By Frequency'
-            : 'By Amount',
-        style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
-      ),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
-        padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  Widget _buildEmptyTransactionState(ColorScheme scheme, bool isSmallScreen) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.receipt_long,
-            size: isSmallScreen ? 48 : 64,
-            color: scheme.onSurfaceVariant,
-          ),
-          SizedBox(height: isSmallScreen ? 12 : 16),
-          Text(
-            _selectedCategories.isEmpty
-                ? 'No transactions in selected period'
-                : 'No transactions found for selected category',
-            style: TextStyle(
-              color: scheme.onSurfaceVariant,
-              fontSize: isSmallScreen ? 14 : 16,
+              ],
             ),
-            textAlign: TextAlign.center,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
+
+  // Widget _buildViewToggleButton(ColorScheme scheme, bool isSmallScreen) {
+  //   return ElevatedButton.icon(
+  //     onPressed: _toggleAggregation,
+  //     icon: Icon(
+  //       _isAggregated ? Icons.splitscreen : Icons.group_work,
+  //       size: isSmallScreen ? 16 : 18,
+  //       color: scheme.onPrimary,
+  //     ),
+  //     label: Text(
+  //       _isAggregated ? 'Split View' : 'Aggregate View',
+  //       style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+  //     ),
+  //     style: ElevatedButton.styleFrom(
+  //       backgroundColor: scheme.primary,
+  //       foregroundColor: scheme.onPrimary,
+  //       padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
+  //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+  //     ),
+  //   );
+  // }
+  //
+  // Widget _buildSortToggleButton(ColorScheme scheme, bool isSmallScreen) {
+  //   return ElevatedButton.icon(
+  //     onPressed: () {
+  //       setState(() {
+  //         _aggregateSortBy = _aggregateSortBy == 'frequency_high'
+  //             ? 'amount_high'
+  //             : 'frequency_high';
+  //         _updateAggregatedTransactions();
+  //       });
+  //     },
+  //     icon: Icon(
+  //       _aggregateSortBy != 'frequency_high'
+  //           ? Icons.trending_up
+  //           : Icons.attach_money,
+  //       size: isSmallScreen ? 16 : 18,
+  //       color: scheme.onPrimary,
+  //     ),
+  //     label: Text(
+  //       _aggregateSortBy != 'frequency_high'
+  //           ? 'By Frequency'
+  //           : 'By Amount',
+  //       style: TextStyle(fontSize: isSmallScreen ? 12 : 14),
+  //     ),
+  //     style: ElevatedButton.styleFrom(
+  //       backgroundColor: scheme.primary,
+  //       foregroundColor: scheme.onPrimary,
+  //       padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
+  //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+  //     ),
+  //   );
+  // }
+  //
+  // Widget _buildEmptyTransactionState(ColorScheme scheme, bool isSmallScreen) {
+  //   return Center(
+  //     child: Column(
+  //       mainAxisAlignment: MainAxisAlignment.center,
+  //       children: [
+  //         Icon(
+  //           Icons.receipt_long,
+  //           size: isSmallScreen ? 48 : 64,
+  //           color: scheme.onSurfaceVariant,
+  //         ),
+  //         SizedBox(height: isSmallScreen ? 12 : 16),
+  //         Text(
+  //           _selectedCategories.isEmpty
+  //               ? 'No transactions in selected period'
+  //               : 'No transactions found for selected category',
+  //           style: TextStyle(
+  //             color: scheme.onSurfaceVariant,
+  //             fontSize: isSmallScreen ? 14 : 16,
+  //           ),
+  //           textAlign: TextAlign.center,
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildCategoryFilterChip({
     required String label,
@@ -1430,22 +1547,18 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     required VoidCallback onTap,
     required bool isSmallScreen,
     required bool isVerySmallScreen,
+    VoidCallback? onLongPress, // optional long press callback
   }) {
-    final scheme = Theme
-        .of(context)
-        .colorScheme;
+    final scheme = Theme.of(context).colorScheme;
 
     final fontSize = isVerySmallScreen ? 10.0 : (isSmallScreen ? 11.0 : 12.0);
     final iconSize = isVerySmallScreen ? 12.0 : (isSmallScreen ? 13.0 : 14.0);
-    final horizontalPadding = isVerySmallScreen ? 10.0 : (isSmallScreen
-        ? 12.0
-        : 16.0);
-    final verticalPadding = isVerySmallScreen ? 6.0 : (isSmallScreen
-        ? 7.0
-        : 8.0);
+    final horizontalPadding = isVerySmallScreen ? 10.0 : (isSmallScreen ? 12.0 : 16.0);
+    final verticalPadding = isVerySmallScreen ? 6.0 : (isSmallScreen ? 7.0 : 8.0);
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress, // handle long press
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: EdgeInsets.symmetric(
@@ -1455,10 +1568,6 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.15) : scheme.surface,
           borderRadius: BorderRadius.circular(20),
-          // border: Border.all(
-          //   color: isSelected ? color : scheme.outlineVariant,
-          //   width: isSelected ? 2 : 1,
-          // ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1482,6 +1591,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       ),
     );
   }
+
 
   Widget _buildEmptyState(bool isSmallScreen) {
     return Center(
