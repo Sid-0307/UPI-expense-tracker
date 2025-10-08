@@ -15,7 +15,7 @@ import 'package:upi_expense_tracker/widgets/daily_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/weekday_spend_chart.dart';
 import 'package:upi_expense_tracker/widgets/compact_date_selector.dart';
 import 'package:upi_expense_tracker/widgets/frequent_merchant_list.dart';
-import 'package:excel/excel.dart' hide Border;
+import 'package:excel/excel.dart' hide Border,BorderStyle;
 import 'package:upi_expense_tracker/widgets/summary_cards.dart';
 import 'package:upi_expense_tracker/widgets/transaction_list_item.dart';
 import 'package:upi_expense_tracker/widgets/spend_distribution_chart.dart';
@@ -24,6 +24,7 @@ import 'package:upi_expense_tracker/widgets/cumulative_spend_chart.dart';
 import 'package:upi_expense_tracker/utils/category_utils.dart';
 import 'package:upi_expense_tracker/screens/merchant_manager_screen.dart';
 
+import '../services/custom_category.dart';
 import '../services/merchant_store.dart';
 import '../utils/date_formatter.dart';
 
@@ -46,7 +47,8 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   late TabController _tabController;
   bool _isAggregated = false;
   List<Transaction> _aggregatedTransactions = [];
-  final Set<SpendCategory> _selectedCategories = {};
+  final Set<Object> _selectedCategories = {};
+  final Set<CategoryInfo> _selectedCategoryInfos = {};
 
   // Sorting options
   String _aggregateSortBy = 'frequency_high'; // frequency_high, amount_high
@@ -58,6 +60,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   void initState() {
     super.initState();
     // Initialize with last 30 days
+    _initializeCustomCategories();
     _endDate = DateTime.now();
     _startDate = _endDate.subtract(const Duration(days: 30));
     _updateFilteredTransactions();
@@ -71,6 +74,12 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+
+  Future<void> _initializeCustomCategories() async {
+    await CustomCategoryStore.instance.initialize();
+    if (mounted) setState(() {});
   }
 
   void _updateFilteredTransactions() {
@@ -416,6 +425,131 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     }
   }
 
+  // Add this method to your _TransactionSummaryScreenState class
+
+  Future<void> _showAddCategoryDialog() async {
+    final TextEditingController nameController = TextEditingController();
+    final scheme = Theme.of(context).colorScheme;
+
+    return showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Add Custom Category'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Category Name',
+                    hintText: 'e.g., Investments, Gifts, etc.',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    prefixIcon: const Icon(Icons.category),
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                  maxLength: 20,
+                ),
+              ],
+            ),
+          ),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final categoryName = nameController.text.trim();
+                if (categoryName.isNotEmpty) {
+                  await CustomCategoryStore.instance.addCategory(categoryName);
+                  Navigator.of(context).pop();
+
+                  setState(() {}); // Refresh UI to show new category
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: Colors.white),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text('Category "$categoryName" added successfully'),
+                          ),
+                        ],
+                      ),
+                      backgroundColor: Colors.green[600],
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: scheme.primary,
+                foregroundColor: scheme.onPrimary,
+              ),
+              child: const Text('Add Category'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+// Add this widget method to build the "Add Category" button
+  Widget _buildAddCategoryButton(bool isSmallScreen, bool isVerySmallScreen) {
+    final scheme = Theme.of(context).colorScheme;
+    final fontSize = isVerySmallScreen ? 10.0 : (isSmallScreen ? 11.0 : 12.0);
+    final iconSize = isVerySmallScreen ? 12.0 : (isSmallScreen ? 13.0 : 14.0);
+    final horizontalPadding = isVerySmallScreen ? 10.0 : (isSmallScreen ? 12.0 : 16.0);
+    final verticalPadding = isVerySmallScreen ? 6.0 : (isSmallScreen ? 7.0 : 8.0);
+
+    return GestureDetector(
+      onTap: _showAddCategoryDialog,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: verticalPadding,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: scheme.primary,
+            width: 1.5,
+            style: BorderStyle.solid,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              size: iconSize,
+              color: scheme.onPrimary,
+            ),
+            SizedBox(width: isVerySmallScreen ? 4 : 6),
+            Text(
+              'Add',
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w600,
+                color: scheme.onPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Sort transactions by date (newest first)
@@ -501,6 +635,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
           SizedBox(height: isSmallScreen ? 2 : 4),
 
           // Category filters with responsive scrolling
+          // Category filters with responsive scrolling
           Padding(
             padding: EdgeInsets.fromLTRB(
                 horizontalPadding, 0, horizontalPadding, 0),
@@ -528,7 +663,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                         isVerySmallScreen: isVerySmallScreen,
                       ),
                     ),
-                    // Individual category buttons
+                    // Default category buttons
                     ...getAllCategories().map((category) {
                       final categoryColor = category == SpendCategory.others
                           ? getCategoryColor(category, colorScheme: scheme)
@@ -557,6 +692,37 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                         ),
                       );
                     }).toList(),
+                    // Custom category buttons
+                    ...CustomCategoryStore.instance.getAllCustomCategories().map((category) {
+                      final categoryColor = getCategoryColor(category);
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: _buildCategoryFilterChip(
+                          label: getCategoryName(category),
+                          icon: getCategoryIcon(category),
+                          isSelected: _selectedCategories.contains(category),
+                          color: categoryColor,
+                          onTap: () {
+                            setState(() {
+                              if (_selectedCategories.contains(category)) {
+                                _selectedCategories.remove(category);
+                              } else {
+                                _selectedCategories.clear();
+                                _selectedCategories.add(category);
+                              }
+                              _updateAggregatedTransactions();
+                            });
+                          },
+                          isSmallScreen: isSmallScreen,
+                          isVerySmallScreen: isVerySmallScreen,
+                        ),
+                      );
+                    }).toList(),
+                    // Add Category button
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: _buildAddCategoryButton(isSmallScreen, isVerySmallScreen),
+                    ),
                   ],
                 ),
               ),

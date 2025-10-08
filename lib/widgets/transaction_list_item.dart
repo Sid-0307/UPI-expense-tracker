@@ -30,11 +30,11 @@ class TransactionListItem extends StatelessWidget {
       child: Card(
         margin: const EdgeInsets.symmetric(vertical: 8),
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
         child: Container(
-          decoration: BoxDecoration(
+        decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border(
               left: BorderSide(
@@ -50,8 +50,8 @@ class TransactionListItem extends StatelessWidget {
                 spreadRadius: 0,
               ),
             ],
-          ),
-          child: Padding(
+        ),
+        child: Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
               children: [
@@ -98,7 +98,7 @@ class TransactionListItem extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                const SizedBox(height: 4),
                       Text(
                         DateFormatter.formatDateTime(transaction.dateTime),
                         style: TextStyle(
@@ -107,23 +107,23 @@ class TransactionListItem extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Container(
+                Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
+                  decoration: BoxDecoration(
                           color: categoryColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                             Icon(
                               getCategoryIcon(category),
                               size: 12,
                               color: categoryColor,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              getCategoryName(category),
+                      const SizedBox(width: 4),
+                      Text(
+                        getCategoryName(category),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: categoryColor,
@@ -141,13 +141,13 @@ class TransactionListItem extends StatelessWidget {
                 
                 // Amount
                 Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '₹${transaction.amount.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '₹${transaction.amount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
                         color: transaction.type == 'debit'
                             ? Colors.red[700]
                             : Colors.green[700],
@@ -156,8 +156,8 @@ class TransactionListItem extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       transaction.type,
-                      style: TextStyle(
-                        fontSize: 10,
+                          style: TextStyle(
+                            fontSize: 10,
                         color: scheme.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
                       ),
