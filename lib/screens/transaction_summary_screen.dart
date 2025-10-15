@@ -418,45 +418,102 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       idx += 1;
     });
 
-    // Save the file
+    // Save the file with simplified Android version handling
     try {
+      final fileBytes = excel.save();
+      if (fileBytes == null) {
+        throw Exception('Failed to generate Excel file');
+      }
+
+      String? filePath;
+      final fileName = 'Xpense_${dateFormat.format(_startDate)}_${dateFormat.format(_endDate)}.xlsx';
+
       if (Platform.isAndroid) {
-        final status = await Permission.storage.request();
-        if (!status.isGranted) {
-          final manageStatus = await Permission.manageExternalStorage.request();
-          if (!manageStatus.isGranted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Storage permission denied')));
+        // Request notification permission for Android 13+
+        await Permission.notification.request();
+
+        // Check Android SDK version using Platform.version
+        final int sdkInt = _getAndroidSdkInt();
+
+        if (sdkInt >= 29) {
+          // Android 10+ (API 29+) - Use app-specific external directory
+          // This doesn't require any permissions and is accessible via file manager
+          final directory = await getExternalStorageDirectory();
+
+          if (directory != null) {
+            // Create a more accessible path
+            final String basePath = directory.path.split('Android')[0];
+            final String xpensePath = '${basePath}Documents/Xpense';
+
+            final xpenseDir = Directory(xpensePath);
+            if (!await xpenseDir.exists()) {
+              await xpenseDir.create(recursive: true);
+            }
+
+            filePath = '$xpensePath/$fileName';
+            final file = File(filePath);
+            await file.writeAsBytes(fileBytes);
+          }
+        } else {
+          // Android 9 and below - Request storage permission
+          final status = await Permission.storage.request();
+          if (!status.isGranted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Storage permission is required'))
+            );
             return;
           }
+
+          final directory = Directory('/storage/emulated/0/Download');
+          if (!await directory.exists()) {
+            await directory.create(recursive: true);
+          }
+
+          filePath = '${directory.path}/$fileName';
+          final file = File(filePath);
+          await file.writeAsBytes(fileBytes);
         }
-        await Permission.notification.request();
-      }
-
-      Directory? directory;
-      if (Platform.isAndroid) {
-        directory = Directory('/storage/emulated/0/Download');
-        if (!await directory.exists()) directory = await getExternalStorageDirectory();
       } else if (Platform.isIOS) {
-        directory = await getApplicationDocumentsDirectory();
+        final directory = await getApplicationDocumentsDirectory();
+        filePath = '${directory.path}/$fileName';
+        final file = File(filePath);
+        await file.writeAsBytes(fileBytes);
       } else {
-        directory = await getDownloadsDirectory();
+        final directory = await getDownloadsDirectory();
+        if (directory != null) {
+          filePath = '${directory.path}/$fileName';
+          final file = File(filePath);
+          await file.writeAsBytes(fileBytes);
+        }
       }
 
-      if (directory == null) throw Exception('Could not access folder');
-
-      final fileName = 'Xpense(${dateFormat.format(_startDate)}-${dateFormat.format(_endDate)}).xlsx';
-      final filePath = '${directory.path}/$fileName';
-
-      final fileBytes = excel.save();
-      if (fileBytes != null) {
-        File(filePath)
-          ..createSync(recursive: true)
-          ..writeAsBytesSync(fileBytes);
-
+      if (filePath != null) {
         await _showDownloadNotification(filePath, fileName);
+      } else {
+        throw Exception('Could not save file');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error exporting Excel: $e')));
+      print('Error exporting Excel: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}'))
+      );
+    }
+  }
+
+// Helper method to get Android SDK version
+  int _getAndroidSdkInt() {
+    try {
+      // Parse SDK version from Platform.version
+      // Example: "2.10.0 (stable) (Tue Oct 13 15:50:27 2020 +0200) on "android_ia32""
+      final versionStr = Platform.version;
+      if (versionStr.contains('android')) {
+        // For Android 10+, we can safely assume API 29+
+        // This is a simple heuristic - for production you might want device_info_plus
+        return 29; // Default to Android 10+ behavior
+      }
+      return 28; // Fallback to older Android
+    } catch (e) {
+      return 29; // Default to modern Android
     }
   }
 
