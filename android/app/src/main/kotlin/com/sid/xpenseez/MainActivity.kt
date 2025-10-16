@@ -1,4 +1,4 @@
-package com.sid.xpense
+package com.sid.xpenseez
 
 import io.flutter.embedding.android.FlutterActivity
 

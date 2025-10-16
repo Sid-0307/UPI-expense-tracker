@@ -353,6 +353,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
     }
 
     // Aggregated Sheet
+    excel['Aggregated Data'];
     Sheet aggSheet = excel['Aggregated Data'];
     for (int i = 0; i < 5; i++) aggSheet.setColumnWidth(i, 30);
 
@@ -418,7 +419,7 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       idx += 1;
     });
 
-    // Save the file with simplified Android version handling
+    // Save the file - SIMPLIFIED FOR ANDROID 10+
     try {
       final fileBytes = excel.save();
       if (fileBytes == null) {
@@ -426,52 +427,36 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
       }
 
       String? filePath;
-      final fileName = 'Xpense_${dateFormat.format(_startDate)}_${dateFormat.format(_endDate)}.xlsx';
+      final fileName = 'XpenseEz_${dateFormat.format(_startDate)}_${dateFormat.format(_endDate)}.xlsx';
 
       if (Platform.isAndroid) {
         // Request notification permission for Android 13+
         await Permission.notification.request();
 
-        // Check Android SDK version using Platform.version
-        final int sdkInt = _getAndroidSdkInt();
+        // Use app-specific external directory (no permission needed on Android 10+)
+        final directory = await getExternalStorageDirectory();
 
-        if (sdkInt >= 29) {
-          // Android 10+ (API 29+) - Use app-specific external directory
-          // This doesn't require any permissions and is accessible via file manager
-          final directory = await getExternalStorageDirectory();
-
-          if (directory != null) {
-            // Create a more accessible path
-            final String basePath = directory.path.split('Android')[0];
-            final String xpensePath = '${basePath}Documents/Xpense';
-
-            final xpenseDir = Directory(xpensePath);
-            if (!await xpenseDir.exists()) {
-              await xpenseDir.create(recursive: true);
-            }
-
-            filePath = '$xpensePath/$fileName';
-            final file = File(filePath);
-            await file.writeAsBytes(fileBytes);
-          }
-        } else {
-          // Android 9 and below - Request storage permission
-          final status = await Permission.storage.request();
-          if (!status.isGranted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Storage permission is required'))
-            );
-            return;
-          }
-
-          final directory = Directory('/storage/emulated/0/Download');
-          if (!await directory.exists()) {
-            await directory.create(recursive: true);
-          }
-
+        if (directory != null) {
+          // Save in app's external files directory
           filePath = '${directory.path}/$fileName';
           final file = File(filePath);
           await file.writeAsBytes(fileBytes);
+
+          // Make file accessible via Media Store for Android 10+
+          if (Platform.isAndroid) {
+            try {
+              // Copy to Downloads folder using MediaStore (Android 10+)
+              final downloadsDir = Directory('/storage/emulated/0/Download');
+              if (await downloadsDir.exists()) {
+                final downloadPath = '${downloadsDir.path}/$fileName';
+                await file.copy(downloadPath);
+                filePath = downloadPath;
+              }
+            } catch (e) {
+              // If copying to Downloads fails, keep the app directory path
+              print('Could not copy to Downloads: $e');
+            }
+          }
         }
       } else if (Platform.isIOS) {
         final directory = await getApplicationDocumentsDirectory();
@@ -896,25 +881,42 @@ class _TransactionSummaryScreenState extends State<TransactionSummaryScreen> wit
                 alignment: Alignment.center,
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 4.0,vertical: 16.0),
-                  child: ElevatedButton.icon(
-                    onPressed: _exportToExcel,
-                    icon: Icon(Icons.file_download, color: scheme.onPrimary),
-                    label: Text(
-                      'Export to Excel',
-                      style: TextStyle(color: scheme.onPrimary),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      backgroundColor: scheme.primary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8), // reduced from default 8–12
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 16.0),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _exportToExcel,
+                      borderRadius: BorderRadius.circular(8),
+                      splashColor: scheme.onPrimary.withOpacity(0.2),
+                      highlightColor: scheme.onPrimary.withOpacity(0.1),
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          color: scheme.primary,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.file_download, color: scheme.onPrimary),
+                              SizedBox(width: 8),
+                              Text(
+                                'Export to Excel',
+                                style: TextStyle(
+                                  color: scheme.onPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              SummaryCards(
+              ),              SummaryCards(
                 transactions: filteredTransactions,
                 startDate: _startDate,
                 endDate: _endDate,

@@ -319,6 +319,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                         color: Theme.of(context).colorScheme.onBackground,
                                       ),
                                     ),
+                                    TextSpan(
+                                      text: 'E',
+                                      style: TextStyle(
+                                        fontFamily: 'BagelFatOne',
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: 'z',
+                                      style: TextStyle(
+                                        fontFamily: 'CherryBombOne',
+                                        fontWeight: FontWeight.w100,
+                                        color: Theme.of(context).colorScheme.onBackground,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
