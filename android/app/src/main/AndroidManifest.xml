@@ -12,7 +12,7 @@
         android:label="XpenseEz"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true">
+        android:enableOnBackInvokedCallback="true">
 
         <!-- Add provider for file sharing -->
         <provider
