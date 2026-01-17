@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:open_file/open_file.dart';
 import 'package:upi_expense_tracker/screens/home_screen.dart';
 import 'package:upi_expense_tracker/services/merchant_store.dart';
 
@@ -19,9 +21,43 @@ class AppTheme {
   }
 }
 
+Future<void> _initializeNotifications() async {
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+  FlutterLocalNotificationsPlugin();
+
+  const AndroidInitializationSettings initializationSettingsAndroid =
+  AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  const InitializationSettings initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+  );
+
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings,
+    onDidReceiveNotificationResponse: (NotificationResponse response) async {
+      if (response.payload != null) {
+        await OpenFile.open(response.payload!);
+      }
+    },
+  );
+
+  // Create notification channel for Android
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'download_channel',
+    'Downloads',
+    description: 'Notifications for downloaded files',
+    importance: Importance.high,
+  );
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await MerchantStore.instance.initialize();
+  await _initializeNotifications(); // ✅ move init here instead of initState
   runApp(const MyApp());
 }
 
@@ -36,7 +72,7 @@ class MyApp extends StatelessWidget {
     const onPrimary = Color(0xFFFFFFFF);
     const onSurface = Color(0xFF000000); // Black text
     const onBackground = Color(0xFF000000); // Black text
-    
+
     final scheme = ColorScheme.light(
       primary: primary,
       onPrimary: onPrimary,
@@ -49,7 +85,7 @@ class MyApp extends StatelessWidget {
       outline: const Color(0xFFCCCCCC),
       outlineVariant: const Color(0xFFE0E0E0),
     );
-    
+
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
@@ -74,7 +110,7 @@ class MyApp extends StatelessWidget {
     const onPrimary = Color(0xFFFFFFFF);
     const onSurface = Color(0xFFFFFFFF); // White text
     const onBackground = Color(0xFFFFFFFF); // White text
-    
+
     final scheme = ColorScheme.dark(
       primary: primary,
       onPrimary: onPrimary,
@@ -87,7 +123,7 @@ class MyApp extends StatelessWidget {
       outline: const Color(0xFF5A4A6A),
       outlineVariant: const Color(0xFF3A2A4A),
     );
-    
+
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,

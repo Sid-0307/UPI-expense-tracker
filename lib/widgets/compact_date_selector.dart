@@ -22,6 +22,8 @@ class CompactDateSelector extends StatefulWidget {
 
 class _CompactDateSelectorState extends State<CompactDateSelector> {
   bool _isExpanded = false;
+  int _selectedQuickRange = 30; // stores currently selected quick range in days
+
 
   @override
   Widget build(BuildContext context) {
@@ -118,22 +120,33 @@ class _CompactDateSelectorState extends State<CompactDateSelector> {
     final scheme = Theme.of(context).colorScheme;
     final width = MediaQuery.of(context).size.width;
 
+    final isSelected = _selectedQuickRange == days;
+
     return InkWell(
-      onTap: () => widget.onQuickRangeSelected(days),
+      onTap: () {
+        setState(() {
+          _selectedQuickRange = days; // update selection
+        });
+        widget.onQuickRangeSelected(days);
+      },
       borderRadius: BorderRadius.circular(10),
       child: SizedBox(
-        width: width / 5, // each button takes 1/4th of screen width
+        width: width / 5,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: scheme.primary,
+            color: isSelected ? scheme.primary : scheme.primary.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? scheme.primary : scheme.outlineVariant,
+              width: 1.5,
+            ),
           ),
           alignment: Alignment.center,
           child: Text(
             label,
             style: TextStyle(
-              color: scheme.onPrimary,
+              color: isSelected ? scheme.onPrimary : scheme.onSurface,
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),

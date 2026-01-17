@@ -1,5 +1,8 @@
+// Updated lib/utils/category_utils.dart
+
 import 'package:flutter/material.dart';
 import 'package:upi_expense_tracker/services/merchant_store.dart';
+import '../services/custom_category.dart';
 
 enum SpendCategory {
   food,
@@ -16,16 +19,20 @@ enum SpendCategory {
 }
 
 class CategoryInfo {
-  final SpendCategory category;
+  final SpendCategory? category;
+  final String? customId;
   final String name;
   final Color color;
   final IconData icon;
+  final bool isCustom;
 
   const CategoryInfo({
-    required this.category,
+    this.category,
+    this.customId,
     required this.name,
     required this.color,
     required this.icon,
+    this.isCustom = false,
   });
 }
 
@@ -69,7 +76,7 @@ const Map<SpendCategory, CategoryInfo> kCategoryInfo = {
   SpendCategory.entertainment: CategoryInfo(
     category: SpendCategory.entertainment,
     name: 'Entertainment',
-    color: Color(0xFFFFCA28),
+    color: Color(0xFFFF9A28),
     icon: Icons.movie,
   ),
   SpendCategory.health: CategoryInfo(
@@ -90,40 +97,29 @@ const Map<SpendCategory, CategoryInfo> kCategoryInfo = {
     color: Color(0xFF009688),
     icon: Icons.lightbulb,
   ),
-  // Note: 'others' now uses a placeholder color - use getCategoryColor() for theme-aware color
   SpendCategory.others: CategoryInfo(
     category: SpendCategory.others,
     name: 'Others',
-    color: Color(0xFFBDBDBD), // Fallback color
+    color: Color(0xFFBDBDBD),
     icon: Icons.more_horiz,
   ),
 };
 
 // Lowercase substring patterns → category. Order matters; first match wins.
 final List<MapEntry<List<String>, SpendCategory>> _merchantPatterns = [
-  // Food delivery & restaurants
   MapEntry(['swiggy', 'zomato', 'eat', 'restaurant', 'domino', 'pizza', 'kfc', 'mcdonald', 'burger king'], SpendCategory.food),
-  // Groceries & quick commerce
   MapEntry(['blinkit', 'zepto', 'bb', 'bigbasket', 'dunzo', 'grocer', 'more supermarket', 'dmart'], SpendCategory.groceries),
-  // Shopping & e-commerce
   MapEntry(['amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'tatacliq', 'meesho', 'croma', 'reliance digital', 'ikea'], SpendCategory.shopping),
-  // Bills & utilities
   MapEntry(['electric', 'gas', 'water', 'internet', 'broadband', 'recharge', 'dth', 'postpaid', 'prepaid', 'billdesk'], SpendCategory.bills),
   MapEntry(['biller', 'eb bill', 'power', 'bsnl', 'jio', 'airtel'], SpendCategory.utilities),
-  // Transport & mobility
   MapEntry(['uber', 'ola', 'rapido', 'bounce', 'meru', 'metro'], SpendCategory.transport),
-  // Travel
   MapEntry(['irctc', 'makemytrip', 'mmt', 'yatra', 'ixigo', 'cleartrip', 'goibibo', 'air india', 'indigo', 'vistara'], SpendCategory.travel),
-  // Entertainment
   MapEntry(['netflix', 'prime video', 'hotstar', 'disney', 'spotify', 'wynk', 'sonyliv', 'gaana', 'bookmyshow', 'bms'], SpendCategory.entertainment),
-  // Health
   MapEntry(['pharm', 'apollo', '1mg', 'tata 1mg', 'practo', 'clinic', 'hospital', 'medlife'], SpendCategory.health),
-  // Education
   MapEntry(['udemy', 'coursera', 'byju', 'unacademy', 'skillshare', 'edx'], SpendCategory.education),
 ];
 
 SpendCategory getCategoryForMerchant(String merchant) {
-  // Check user-defined or default merchant mappings first
   final override = MerchantStore.instance.lookupCategoryForMerchant(merchant);
   if (override != null) return override;
   final m = merchant.toLowerCase();
@@ -137,20 +133,102 @@ SpendCategory getCategoryForMerchant(String merchant) {
   return SpendCategory.others;
 }
 
-String getCategoryName(SpendCategory category) => kCategoryInfo[category]!.name;
+String getCategoryName(Object category) {
+  if (category is CustomCategory) {
+    return category.name;
+  }
+  return kCategoryInfo[category]!.name;
+}
 
-// Updated function to handle theme-aware color for 'others' category
-Color getCategoryColor(SpendCategory category, {ColorScheme? colorScheme}) {
+Color getCategoryColor(Object category, {ColorScheme? colorScheme}) {
+  if (category is CustomCategory) {
+    return category.color;
+  }
   if (category == SpendCategory.others && colorScheme != null) {
-    // Return theme-appropriate color for 'others'
     return colorScheme.onSurface;
   }
   return kCategoryInfo[category]!.color;
 }
 
-IconData getCategoryIcon(SpendCategory category) => kCategoryInfo[category]!.icon;
+IconData getCategoryIcon(Object category) {
+  if (category is CustomCategory) {
+    return category.icon;
+  }
+  return kCategoryInfo[category]!.icon;
+}
 
-// Helper function to get all categories in a specific order
+// Unified display helpers for merchants (resolve to custom if present)
+bool hasCustomCategoryForMerchant(String merchant) {
+  return MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant) != null;
+}
+
+String getDisplayCategoryNameForMerchant(String merchant) {
+  final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant);
+  if (customId != null) {
+    final cc = CustomCategoryStore.instance
+        .getAllCustomCategories()
+        .firstWhere((c) => c.id == customId, orElse: () => CustomCategory(id: '', name: 'Custom', colorValue: const Color(0xFFBDBDBD).value, iconCodePoint: Icons.category.codePoint));
+    return cc.name;
+  }
+  final def = getCategoryForMerchant(merchant);
+  return getCategoryName(def);
+}
+
+Color getDisplayCategoryColorForMerchant(String merchant, {ColorScheme? colorScheme}) {
+  final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant);
+  if (customId != null) {
+    final cc = CustomCategoryStore.instance
+        .getAllCustomCategories()
+        .firstWhere((c) => c.id == customId, orElse: () => CustomCategory(id: '', name: 'Custom', colorValue: const Color(0xFFBDBDBD).value, iconCodePoint: Icons.category.codePoint));
+    return cc.color;
+  }
+  final def = getCategoryForMerchant(merchant);
+  return getCategoryColor(def, colorScheme: colorScheme);
+}
+
+IconData getDisplayCategoryIconForMerchant(String merchant) {
+  final customId = MerchantStore.instance.lookupCustomCategoryIdForMerchant(merchant);
+  if (customId != null) {
+    final cc = CustomCategoryStore.instance
+        .getAllCustomCategories()
+        .firstWhere((c) => c.id == customId, orElse: () => CustomCategory(id: '', name: 'Custom', colorValue: const Color(0xFFBDBDBD).value, iconCodePoint: Icons.category.codePoint));
+    return cc.icon;
+  }
+  final def = getCategoryForMerchant(merchant);
+  return getCategoryIcon(def);
+}
+
+// Get all categories (default + custom)
+List<CategoryInfo> getAllCategoriesInfo() {
+  final defaultCategories = [
+    SpendCategory.food,
+    SpendCategory.groceries,
+    SpendCategory.shopping,
+    SpendCategory.bills,
+    SpendCategory.transport,
+    SpendCategory.travel,
+    SpendCategory.entertainment,
+    SpendCategory.health,
+    SpendCategory.education,
+    SpendCategory.utilities,
+    SpendCategory.others,
+  ].map((cat) => kCategoryInfo[cat]!).toList();
+
+  final customCategories = CustomCategoryStore.instance
+      .getAllCustomCategories()
+      .map((custom) => (CategoryInfo(
+    customId: custom.id,
+    name: custom.name,
+    color: custom.color,
+    icon: custom.icon,
+    isCustom: true,
+  )))
+      .toList();
+
+  return [...defaultCategories, ...customCategories];
+}
+
+// For backward compatibility
 List<SpendCategory> getAllCategories() {
   return [
     SpendCategory.food,

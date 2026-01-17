@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:upi_expense_tracker/services/merchant_store.dart';
+import 'package:upi_expense_tracker/services/custom_category.dart';
 import 'package:upi_expense_tracker/utils/category_utils.dart';
 
 class MerchantManagerScreen extends StatefulWidget {
@@ -14,8 +15,10 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
   final TextEditingController _merchantController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   SpendCategory _selectedCategory = SpendCategory.food;
+  String? _selectedCustomCategoryId; // unified selection supports custom
   String _searchQuery = '';
   SpendCategory? _filterCategory; // null = All
+  String? _selectedCustomFilterId; // filter for custom category
 
   @override
   void initState() {
@@ -38,10 +41,10 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
   // Reusable form widget used in dialog
   Widget _buildFormFields(ColorScheme scheme, {bool closeOnSubmit = false}) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
+                  children: [
+                    Text(
           'Merchant Name',
           style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
@@ -89,10 +92,10 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
               controller: controller,
               focusNode: focusNode,
               style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
+                                decoration: InputDecoration(
                 hintText: 'Search existing or add new merchant',
                 prefixIcon: Icon(Icons.storefront, color: scheme.primary, size: 18),
-                border: OutlineInputBorder(
+                                  border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(color: scheme.outlineVariant),
                 ),
@@ -103,8 +106,8 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(color: scheme.primary, width: 2),
-                ),
-                filled: true,
+                                  ),
+                                  filled: true,
                 fillColor: scheme.surface,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
@@ -112,16 +115,18 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
           },
         ),
         const SizedBox(height: 12),
-        Text(
-          'Category',
+                              Text(
+                                'Category',
           style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
+                              ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<SpendCategory>(
-          value: _selectedCategory,
-          isExpanded: true,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(
+                              DropdownButtonFormField<String>(
+                                value: _selectedCustomCategoryId != null
+                                    ? 'custom:${_selectedCustomCategoryId!}'
+                                    : 'default:${_selectedCategory.name}',
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: scheme.outlineVariant),
             ),
@@ -132,36 +137,76 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: scheme.primary, width: 2),
-            ),
-            filled: true,
+                                  ),
+                                  filled: true,
             fillColor: scheme.surface,
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          ),
-          onChanged: (v) => setState(() => _selectedCategory = v ?? _selectedCategory),
-          items: SpendCategory.values.map((c) => DropdownMenuItem(
-            value: c,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: getCategoryColor(c).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Icon(getCategoryIcon(c), color: getCategoryColor(c), size: 14),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    getCategoryName(c),
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          )).toList(),
+                                ),
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setState(() {
+                                    if (v.startsWith('custom:')) {
+                                      _selectedCustomCategoryId = v.substring('custom:'.length);
+                                    } else if (v.startsWith('default:')) {
+                                      _selectedCustomCategoryId = null;
+                                      final name = v.substring('default:'.length);
+                                      _selectedCategory = SpendCategory.values.firstWhere(
+                                        (e) => e.name == name,
+                                        orElse: () => SpendCategory.others,
+                                      );
+                                    }
+                                  });
+                                },
+                                items: [
+                                  ...SpendCategory.values.map((c) => DropdownMenuItem<String>(
+                                    value: 'default:${c.name}',
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: getCategoryColor(c).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Icon(getCategoryIcon(c), color: getCategoryColor(c), size: 14),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            getCategoryName(c),
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )),
+                                  ...CustomCategoryStore.instance.getAllCustomCategories().map((cc) => DropdownMenuItem<String>(
+                                    value: 'custom:${cc.id}',
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: cc.color.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Icon(cc.icon, color: cc.color, size: 14),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            cc.name,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )),
+                                ],
           menuMaxHeight: 280,
         ),
         const SizedBox(height: 16),
@@ -169,14 +214,18 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
           width: double.infinity,
           child: ElevatedButton.icon(
             onPressed: () async {
-              final name = _merchantController.text.trim();
-              if (name.isEmpty) return;
+                            final name = _merchantController.text.trim();
+                            if (name.isEmpty) return;
               final store = MerchantStore.instance;
-              await store.upsertMapping(name, _selectedCategory);
+              if (_selectedCustomCategoryId != null) {
+                await store.upsertCustomMapping(name, _selectedCustomCategoryId!);
+              } else {
+                await store.upsertMapping(name, _selectedCategory);
+              }
               setState(() {});
-              _merchantController.clear();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
+                            _merchantController.clear();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
                   content: Row(children: [Icon(Icons.check_circle, color: Colors.white), const SizedBox(width: 8), Expanded(child: Text('Added $name to ${getCategoryName(_selectedCategory)}'))]),
                   backgroundColor: Colors.green[600],
                   behavior: SnackBarBehavior.floating,
@@ -187,9 +236,9 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
             },
             icon: const Icon(Icons.add_circle_outline, size: 18),
             label: const Text('Add Merchant', style: TextStyle(fontSize: 14)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: scheme.primary,
-              foregroundColor: scheme.onPrimary,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: scheme.primary,
+                            foregroundColor: scheme.onPrimary,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
@@ -201,7 +250,10 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
 
   // Show edit dialog for a specific merchant
   void _showEditDialog(String merchantName, SpendCategory currentCategory) {
-    SpendCategory editCategory = currentCategory;
+    // Preselect current mapping (default or custom)
+    final store = MerchantStore.instance;
+    String? editCustomCategoryId = store.lookupCustomCategoryIdForMerchant(merchantName);
+    SpendCategory editCategory = editCustomCategoryId == null ? currentCategory : SpendCategory.others;
 
     showDialog(
       context: context,
@@ -217,27 +269,36 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
             Text('Category', style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 8),
             StatefulBuilder(
-              builder: (context, setDialogState) => DropdownButtonFormField<SpendCategory>(
-                value: editCategory,
+              builder: (context, setDialogState) => DropdownButtonFormField<String>(
+                value: editCustomCategoryId != null ? 'custom:$editCustomCategoryId' : 'default:${editCategory.name}',
                 isExpanded: true,
                 decoration: InputDecoration(
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
-                onChanged: (v) => setDialogState(() => editCategory = v ?? editCategory),
-                items: SpendCategory.values.map((c) => DropdownMenuItem(
-                  value: c,
-                  child: Row(
-                    children: [
-                      Icon(getCategoryIcon(c), color: getCategoryColor(c), size: 16),
-                      const SizedBox(width: 8),
-                      Text(getCategoryName(c)),
-                    ],
-                  ),
-                )).toList(),
+                onChanged: (v) => setDialogState(() {
+                  if (v == null) return;
+                  if (v.startsWith('custom:')) {
+                    editCustomCategoryId = v.substring('custom:'.length);
+                  } else if (v.startsWith('default:')) {
+                    editCustomCategoryId = null;
+                    final name = v.substring('default:'.length);
+                    editCategory = SpendCategory.values.firstWhere((e) => e.name == name, orElse: () => SpendCategory.others);
+                  }
+                }),
+                items: [
+                  ...SpendCategory.values.map((c) => DropdownMenuItem<String>(
+                    value: 'default:${c.name}',
+                    child: Row(children: [Icon(getCategoryIcon(c), color: getCategoryColor(c), size: 16), const SizedBox(width: 8), Text(getCategoryName(c))]),
+                  )),
+                  ...CustomCategoryStore.instance.getAllCustomCategories().map((cc) => DropdownMenuItem<String>(
+                    value: 'custom:${cc.id}',
+                    child: Row(children: [Icon(cc.icon, color: cc.color, size: 16), const SizedBox(width: 8), Text(cc.name)]),
+                  )),
+                ],
               ),
             ),
-          ],
+                      ],
         ),
         actions: [
           TextButton(
@@ -246,7 +307,11 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              await MerchantStore.instance.upsertMapping(merchantName, editCategory);
+              if (editCustomCategoryId != null) {
+                await MerchantStore.instance.upsertCustomMapping(merchantName, editCustomCategoryId!);
+              } else {
+                await MerchantStore.instance.upsertMapping(merchantName, editCategory);
+              }
               setState(() {}); // Refresh main screen
               Navigator.pop(context);
 
@@ -325,11 +390,13 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
     required IconData icon,
     required bool isSelected,
     required Color color,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
+    VoidCallback? onLongPress, // new param
   }) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress, // handle long press
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -357,11 +424,23 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     final store = MerchantStore.instance;
-    final entries = store.mappings.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
+    // Merge default and custom mappings for display
+    final List<_DisplayEntry> displayEntries = [];
+    store.mappings.forEach((k, v) {
+      displayEntries.add(_DisplayEntry(merchant: k, isCustom: false, category: v));
+    });
+    store.customMappings.forEach((k, customId) {
+      final cc = CustomCategoryStore.instance.getAllCustomCategories().firstWhere(
+            (c) => c.id == customId,
+            orElse: () => CustomCategory(id: '', name: 'Custom', colorValue: const Color(0xFFBDBDBD).value, iconCodePoint: Icons.category.codePoint),
+          );
+      displayEntries.add(_DisplayEntry(merchant: k, isCustom: true, customCategory: cc));
+    });
+    displayEntries.sort((a, b) => a.merchant.compareTo(b.merchant));
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -447,7 +526,7 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
 
             const SizedBox(height: 12),
 
-            // Horizontal scrolling category filters
+            // Horizontal scrolling category filters (default + custom)
             Padding(
               padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
               child: SizedBox(
@@ -462,12 +541,15 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
                         child: _buildCategoryFilterChip(
                           label: 'All',
                           icon: Icons.all_inclusive,
-                          isSelected: _filterCategory == null,
+                          isSelected: _filterCategory == null && _selectedCustomFilterId == null,
                           color: scheme.primary,
-                          onTap: () => setState(() => _filterCategory = null),
+                          onTap: () => setState(() {
+                            _filterCategory = null;
+                            _selectedCustomFilterId = null;
+                          }),
                         ),
                       ),
-                      // Individual category buttons
+                      // Default categories
                       ...SpendCategory.values.map((category) {
                         final categoryColor = category == SpendCategory.others
                             ? getCategoryColor(category, colorScheme: scheme)
@@ -478,9 +560,59 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
                           child: _buildCategoryFilterChip(
                             label: getCategoryName(category),
                             icon: getCategoryIcon(category),
-                            isSelected: _filterCategory == category,
+                            isSelected: _filterCategory == category && _selectedCustomFilterId == null,
                             color: categoryColor,
-                            onTap: () => setState(() => _filterCategory = category),
+                            onTap: () => setState(() {
+                              _filterCategory = category;
+                              _selectedCustomFilterId = null;
+                            }),
+                          ),
+                        );
+                      }).toList(),
+                      // Custom categories (filterable)
+                      ...CustomCategoryStore.instance.getAllCustomCategories().map((cc) {
+                        final isSelected = _selectedCustomFilterId == cc.id;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: _buildCategoryFilterChip(
+                            label: cc.name,
+                            icon: cc.icon,
+                            isSelected: isSelected,
+                            color: cc.color,
+                            onTap: () {
+                              setState(() {
+                                _selectedCustomFilterId = (_selectedCustomFilterId == cc.id) ? null : cc.id;
+                                _filterCategory = null;
+                              });
+                            },
+                            // onLongPress: () {
+                            //   showDialog(
+                            //     context: context,
+                            //     builder: (ctx) => AlertDialog(
+                            //       title: const Text('Delete category?'),
+                            //       content: Text('Are you sure you want to delete "${cc.name}"?'),
+                            //       actions: [
+                            //         TextButton(
+                            //             onPressed: () => Navigator.pop(ctx),
+                            //             child: const Text('Cancel')
+                            //         ),
+                            //         TextButton(
+                            //             onPressed: () async {
+                            //               await CustomCategoryStore.instance.removeCategory(cc.id);
+                            //               setState(() {
+                            //                 if (_selectedCustomFilterId == cc.id) _selectedCustomFilterId = null;
+                            //               });
+                            //               Navigator.pop(ctx);
+                            //               ScaffoldMessenger.of(context).showSnackBar(
+                            //                   SnackBar(content: Text('${cc.name} deleted'))
+                            //               );
+                            //             },
+                            //             child: const Text('Delete', style: TextStyle(color: Colors.red))
+                            //         ),
+                            //       ],
+                            //     ),
+                            //   );
+                            // },
                           ),
                         );
                       }).toList(),
@@ -495,12 +627,11 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
             // Results count
             Builder(
               builder: (context) {
-                final filteredEntries = entries.where((e) {
-                  final matchesSearch = _searchQuery.isEmpty ||
-                      e.key.toLowerCase().contains(_searchQuery);
-                  final matchesCategory = _filterCategory == null ||
-                      e.value == _filterCategory;
-                  return matchesSearch && matchesCategory;
+                final filteredEntries = displayEntries.where((e) {
+                  final matchesSearch = _searchQuery.isEmpty || e.merchant.toLowerCase().contains(_searchQuery);
+                  final matchesDefault = _filterCategory == null || (!e.isCustom && e.category == _filterCategory);
+                  final matchesCustom = _selectedCustomFilterId == null || (e.isCustom && e.customCategory?.id == _selectedCustomFilterId);
+                  return matchesSearch && matchesDefault && matchesCustom;
                 }).toList();
 
                 return Text(
@@ -509,16 +640,16 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
                     color: scheme.onSurfaceVariant,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                  ),
-                );
-              },
-            ),
+                            ),
+                          );
+                        },
+                      ),
 
             const SizedBox(height: 8),
 
             // Merchant list
             Expanded(
-              child: entries.isEmpty
+              child: displayEntries.isEmpty
                   ? Container(
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
@@ -539,12 +670,11 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
               )
                   : Builder(
                 builder: (context) {
-                  final filteredList = entries.where((e) {
-                    final matchesSearch = _searchQuery.isEmpty ||
-                        e.key.toLowerCase().contains(_searchQuery);
-                    final matchesCategory = _filterCategory == null ||
-                        e.value == _filterCategory;
-                    return matchesSearch && matchesCategory;
+                  final filteredList = displayEntries.where((e) {
+                    final matchesSearch = _searchQuery.isEmpty || e.merchant.toLowerCase().contains(_searchQuery);
+                    final matchesDefault = _filterCategory == null || (!e.isCustom && e.category == _filterCategory);
+                    final matchesCustom = _selectedCustomFilterId == null || (e.isCustom && e.customCategory?.id == _selectedCustomFilterId);
+                    return matchesSearch && matchesDefault && matchesCustom;
                   }).toList();
 
                   if (filteredList.isEmpty) {
@@ -567,11 +697,18 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final entry = filteredList[index];
-                      return _MerchantCard(
-                        entry: entry,
-                        onEdit: () => _showEditDialog(entry.key, entry.value),
-                        onDelete: () => _deleteMerchant(entry.key),
-                      );
+                      return entry.isCustom
+                          ? _MerchantCardCustom(
+                              merchant: entry.merchant,
+                              customCategory: entry.customCategory!,
+                              onEdit: () => _showEditDialog(entry.merchant, SpendCategory.others),
+                              onDelete: () => _deleteMerchant(entry.merchant),
+                            )
+                          : _MerchantCard(
+                              entry: MapEntry(entry.merchant, entry.category!),
+                              onEdit: () => _showEditDialog(entry.merchant, entry.category!),
+                              onDelete: () => _deleteMerchant(entry.merchant),
+                            );
                     },
                   );
                 },
@@ -582,6 +719,20 @@ class _MerchantManagerScreenState extends State<MerchantManagerScreen> {
       ),
     );
   }
+}
+
+class _DisplayEntry {
+  final String merchant;
+  final bool isCustom;
+  final SpendCategory? category;
+  final CustomCategory? customCategory;
+
+  _DisplayEntry({
+    required this.merchant,
+    required this.isCustom,
+    this.category,
+    this.customCategory,
+  });
 }
 
 class _MerchantCard extends StatelessWidget {
@@ -629,6 +780,89 @@ class _MerchantCard extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
         subtitle: Text(getCategoryName(entry.value),
             style: TextStyle(color: getCategoryColor(entry.value), fontSize: 11)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.edit, color: scheme.primary, size: 16),
+              ),
+              onPressed: onEdit,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: scheme.error.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.delete_outline, color: scheme.error, size: 16),
+              ),
+              onPressed: onDelete,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              padding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MerchantCardCustom extends StatelessWidget {
+  final String merchant;
+  final CustomCategory customCategory;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _MerchantCardCustom({
+    Key? key,
+    required this.merchant,
+    required this.customCategory,
+    required this.onEdit,
+    required this.onDelete,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            scheme.surface,
+            customCategory.color.withOpacity(0.03),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: customCategory.color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(customCategory.icon, color: customCategory.color, size: 16),
+        ),
+        title: Text(merchant,
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        subtitle: Text(customCategory.name,
+            style: TextStyle(color: customCategory.color, fontSize: 11)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

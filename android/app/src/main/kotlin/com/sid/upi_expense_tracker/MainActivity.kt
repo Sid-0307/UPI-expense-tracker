@@ -1,4 +1,4 @@
-package com.example.upi_expense_tracker
+package com.sid.upi_expense_tracker
 
 import io.flutter.embedding.android.FlutterActivity
 

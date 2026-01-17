@@ -5,10 +5,14 @@ import 'package:upi_expense_tracker/utils/category_utils.dart';
 
 class SummaryCards extends StatefulWidget {
   final List<Transaction> transactions;
+  final DateTime startDate;
+  final DateTime endDate;
 
   const SummaryCards({
     Key? key,
     required this.transactions,
+    required this.startDate,
+    required this.endDate,
   }) : super(key: key);
 
   @override
@@ -20,16 +24,18 @@ class _SummaryCardsState extends State<SummaryCards> {
 
   @override
   Widget build(BuildContext context) {
-    final currencyFormat = NumberFormat.currency(
-      symbol: '₹',
-      decimalDigits: 2,
-      locale: 'en_IN',
-    );
+
+
     final scheme = Theme.of(context).colorScheme;
 
     // Calculate all metrics
     final metrics = _calculateMetrics();
-
+    final symbol = metrics.totalSpent <= 0 ? '' : '+ ';
+    final currencyFormat = NumberFormat.currency(
+    symbol: '₹',
+    decimalDigits: 2,
+    locale: 'en_IN',
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -46,7 +52,7 @@ class _SummaryCardsState extends State<SummaryCards> {
             _buildSummaryCard(
               context,
               title: 'Total Spent',
-              value: currencyFormat.format(metrics.totalSpent),
+              value: symbol+currencyFormat.format(metrics.totalSpent.abs()),
               icon: Icons.account_balance_wallet,
               color: Colors.blue,
               onTap: () => _onCardTap('total_spent'),
@@ -309,36 +315,40 @@ class _SummaryCardsState extends State<SummaryCards> {
   }
 
   _MetricsData _calculateMetrics() {
-    if (widget.transactions.isEmpty) {
-      return _MetricsData();
-    }
+    if (widget.transactions.isEmpty) return _MetricsData();
+
+    // Filter only debit transactions for spending metrics
+    final debits = widget.transactions.where((t) => t.type == "debit").toList();
+
+    final credits = widget.transactions.where((t) => t.type == "credit").toList();
+
 
     // Basic metrics
-    final totalSpent = widget.transactions.fold<double>(0, (sum, t) => sum + t.amount);
+    final debitSpent = debits.fold<double>(0, (sum, t) => sum + t.amount);
+    final creditEarned =  credits.fold<double>(0, (sum, t) => sum + t.amount);
+    final totalSpent =  creditEarned - debitSpent;
     final transactionCount = widget.transactions.length;
 
     // Median spend
-    final amounts = widget.transactions.map((t) => t.amount).toList()..sort();
-    final medianSpend = amounts.length % 2 == 1
+    final amounts = debits.map((t) => t.amount).toList()..sort();
+    final medianSpend = amounts.isEmpty
+        ? 0.0
+        : (amounts.length % 2 == 1
         ? amounts[amounts.length ~/ 2]
-        : (amounts[amounts.length ~/ 2 - 1] + amounts[amounts.length ~/ 2]) / 2;
+        : (amounts[amounts.length ~/ 2 - 1] + amounts[amounts.length ~/ 2]) / 2);
 
-    // Calculate non-spend days
-    final transactionDates = widget.transactions.map((t) => DateTime(
-      t.dateTime.year,
-      t.dateTime.month,
-      t.dateTime.day,
-    )).toSet();
-
-    final firstDate = widget.transactions.map((t) => t.dateTime).reduce((a, b) => a.isBefore(b) ? a : b);
-    final lastDate = widget.transactions.map((t) => t.dateTime).reduce((a, b) => a.isAfter(b) ? a : b);
-    final totalDays = lastDate.difference(firstDate).inDays + 1;
-    final nonSpendDays = totalDays - transactionDates.length;
+    // Calculate non-spend days (only consider days with debit)
+    final debitDates = debits
+        .map((t) => DateTime(t.dateTime.year, t.dateTime.month, t.dateTime.day))
+        .toSet();
+    print(debitDates);
+    final totalDays = widget.endDate.difference(widget.startDate).inDays;
+    final nonSpendDays = totalDays - debitDates.length;
 
     // Highest spend
     double highestSpend = 0;
     DateTime? highestSpendDate;
-    for (final t in widget.transactions) {
+    for (final t in debits) {
       if (t.amount > highestSpend) {
         highestSpend = t.amount;
         highestSpendDate = t.dateTime;
@@ -347,7 +357,7 @@ class _SummaryCardsState extends State<SummaryCards> {
 
     // Top category
     final Map<SpendCategory, double> totalsByCategory = {};
-    for (final t in widget.transactions) {
+    for (final t in debits) {
       final category = getCategoryForMerchant(t.merchant);
       totalsByCategory[category] = (totalsByCategory[category] ?? 0) + t.amount;
     }
@@ -362,7 +372,7 @@ class _SummaryCardsState extends State<SummaryCards> {
 
     // Top merchant
     final Map<String, double> totalsByMerchant = {};
-    for (final t in widget.transactions) {
+    for (final t in debits) {
       totalsByMerchant[t.merchant] = (totalsByMerchant[t.merchant] ?? 0) + t.amount;
     }
 
@@ -383,7 +393,7 @@ class _SummaryCardsState extends State<SummaryCards> {
       double top3Amount = 0;
       for (int i = 0; i < 3 && i < merchantList.length; i++) {
         final entry = merchantList[i];
-        final percentage = entry.value / totalSpent;
+        final percentage = entry.value / debitSpent;
         topMerchants.add(_MerchantData(
           name: entry.key.length > 15 ? '${entry.key.substring(0, 15)}...' : entry.key,
           amount: entry.value,
@@ -394,8 +404,8 @@ class _SummaryCardsState extends State<SummaryCards> {
 
       // Add "Others" if there are more than 3 merchants
       if (merchantList.length > 3) {
-        final othersAmount = totalSpent - top3Amount;
-        final othersPercentage = othersAmount / totalSpent;
+        final othersAmount = debitSpent - top3Amount;
+        final othersPercentage = othersAmount / debitSpent;
         topMerchants.add(_MerchantData(
           name: 'Others',
           amount: othersAmount,
@@ -407,21 +417,21 @@ class _SummaryCardsState extends State<SummaryCards> {
     // Weekday vs Weekend split
     double weekdaySpend = 0;
     double weekendSpend = 0;
-    for (final t in widget.transactions) {
-      if (t.dateTime.weekday >= 6) { // Saturday = 6, Sunday = 7
+    for (final t in debits) {
+      if (t.dateTime.weekday >= 6) {
         weekendSpend += t.amount;
       } else {
         weekdaySpend += t.amount;
       }
     }
-    final weekdayPercentage = totalSpent > 0 ? (weekdaySpend / totalSpent) * 100.0 : 0.0;
-    final weekendPercentage = totalSpent > 0 ? (weekendSpend / totalSpent) * 100.0 : 0.0;
+    final weekdayPercentage = debitSpent > 0 ? (weekdaySpend / debitSpent) * 100.0 : 0.0;
+    final weekendPercentage = debitSpent > 0 ? (weekendSpend / debitSpent) * 100.0 : 0.0;
 
     // Big spends (> ₹1000)
-    final bigSpends = widget.transactions.where((t) => t.amount > 1000).toList();
+    final bigSpends = debits.where((t) => t.amount > 1000).toList();
     final bigSpendsCount = bigSpends.length;
     final bigSpendsAmount = bigSpends.fold<double>(0, (sum, t) => sum + t.amount);
-    final bigSpendsPercentage = totalSpent > 0 ? (bigSpendsAmount / totalSpent) * 100.0 : 0.0;
+    final bigSpendsPercentage = debitSpent > 0 ? (bigSpendsAmount / debitSpent) * 100.0 : 0.0;
 
     return _MetricsData(
       totalSpent: totalSpent,
