@@ -7,8 +7,6 @@ import 'package:upi_expense_tracker/screens/transaction_summary_screen.dart';
 import 'package:upi_expense_tracker/services/permission_service.dart';
 import 'package:upi_expense_tracker/services/sms_service.dart';
 
-enum ScanMode { smsScan, statementScan }
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
@@ -17,7 +15,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  ScanMode? selectedMode; // null = mode not selected yet
   String selectedBank = 'Axis Bank';
   List<Map<String, String>> banks = [
     {"name": "Axis Bank", "logo": "assets/banks/axis.jpg"},
@@ -30,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
   bool isLoading = false;
   bool isInitializing = true;
+  bool hasAutoNavigated = false; // Track if we've already auto-navigated
 
   final PermissionService _permissionService = PermissionService();
   final SmsService _smsService = SmsService();
@@ -48,11 +46,31 @@ class _HomeScreenState extends State<HomeScreen> {
       final storedBank = prefs.getString(_bankPrefsKey);
 
       if (storedBank != null && mounted) {
-        // Bank is stored, set it as selected (for convenience when SMS Scan is selected)
+        // Bank is stored, set it as selected
         setState(() {
           selectedBank = storedBank;
           isInitializing = false;
         });
+
+        // Auto-navigate only if this is the first initialization
+        // and we haven't auto-navigated before in this session
+        if (!hasAutoNavigated) {
+          hasAutoNavigated = true;
+
+          // Small delay to show the selected bank briefly
+          // await Future.delayed(const Duration(milliseconds: 500));
+
+          if (mounted) {
+            // Check permissions and auto-navigate
+            final hasPermission = await _permissionService.requestSmsPermission();
+
+            if (hasPermission && mounted) {
+              await _autoNavigateToTransactions();
+            } else if (mounted) {
+              _showPermissionDialog();
+            }
+          }
+        }
       } else {
         // No bank stored, show normal home screen
         setState(() {
@@ -68,6 +86,45 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading preferences: $e')),
         );
+      }
+    }
+  }
+
+  /// Auto-navigate to transactions (only on first init)
+  Future<void> _autoNavigateToTransactions() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final List<Transaction> transactions = await _smsService.readTransactions(selectedBank);
+
+      if (mounted) {
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => TransactionSummaryScreen(
+              transactions: transactions,
+              // onBankChange: _handleBankChange,
+            ),
+          ),
+        );
+
+        Future.delayed(const Duration(milliseconds: 500), () {
+          setState(() {
+            isLoading = false;
+          });
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error reading SMS: $e')),
+        );
+        setState(() {
+          isLoading = false;
+        });
       }
     }
   }
@@ -91,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_bankPrefsKey);
+      hasAutoNavigated = false; // Reset auto-navigation flag
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -123,6 +181,10 @@ class _HomeScreenState extends State<HomeScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
+                _clearBankPreference(); // Reset bank selection
+                setState(() {
+                  selectedBank = banks.first['name']!;
+                });
               },
               child: const Text('Cancel'),
             ),
@@ -131,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.of(context).pop();
                 final hasPermission = await _permissionService.requestSmsPermission();
                 if (hasPermission && mounted) {
-                  await _readTransactions();
+                  await _autoNavigateToTransactions();
                 }
               },
               child: const Text('Grant Permission'),
@@ -157,8 +219,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final titleFontSize = isVerySmallScreen ? 28.0 : (isSmallScreen ? 32.0 : 55.0);
     final cardRadius = screenWidth * 0.04; // 4% of screen width
 
-    // Show loading screen during initialization
-    if (isInitializing) {
+    // Show loading screen during initialization or auto-navigation
+    if (isInitializing || (hasAutoNavigated && isLoading)) {
       return Scaffold(
         body: Center(
           child: Column(
@@ -169,21 +231,29 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Initializing...',
+                isInitializing && !isLoading
+                    ? 'Initializing...'
+                    : 'Loading transactions...',
                 style: TextStyle(
                   color: scheme.onSurfaceVariant,
                   fontSize: 16,
                 ),
               ),
+              if (selectedBank.isNotEmpty && (hasAutoNavigated || isLoading)) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Bank: $selectedBank',
+                  style: TextStyle(
+                    color: scheme.primary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       );
-    }
-
-    // Show mode selection if no mode selected yet
-    if (selectedMode == null) {
-      return _buildModeSelection();
     }
 
     return SafeArea(
@@ -277,86 +347,81 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             SizedBox(height: isSmallScreen ? 24 : 32),
 
-                            // Bank Selector Section - Show for both modes
-                            if (selectedMode != null) ...[
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          'Select your bank',
-                                          style: Theme.of(context).textTheme.labelLarge,
-                                        ),
-                                      ),
-                                    ],
+                            // Bank Selector Section
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'Select your bank',
+                                    style: Theme.of(context).textTheme.labelLarge,
                                   ),
-                                  const SizedBox(height: 8),
-                                  DropdownButtonFormField<String>(
-                                    value: selectedBank,
-                                    isExpanded: true, // Prevents overflow
-                                    decoration: InputDecoration(
-                                      filled: true,
-                                      fillColor: Theme.of(context).colorScheme.surface,
-                                      contentPadding: EdgeInsets.symmetric(
-                                        horizontal: screenWidth * 0.03,
-                                        vertical: 14,
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(color: scheme.outlineVariant),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(color: scheme.primary, width: 2),
-                                      ),
+                                ),
+                                const SizedBox(height: 8),
+                                DropdownButtonFormField<String>(
+                                  value: selectedBank,
+                                  isExpanded: true, // Prevents overflow
+                                  decoration: InputDecoration(
+                                    filled: true,
+                                    fillColor: Theme.of(context).colorScheme.surface,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: screenWidth * 0.03,
+                                      vertical: 14,
                                     ),
-                                    onChanged: (String? newValue) {
-                                      setState(() {
-                                        selectedBank = newValue!;
-                                      });
-                                    },
-                                    items: banks.map((bank) {
-                                      return DropdownMenuItem<String>(
-                                        value: bank["name"],
-                                        child: Row(
-                                          children: [
-                                            Image.asset(
-                                              bank["logo"]!,
-                                              width: 24,
-                                              height: 24,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Icon(
-                                                  Icons.account_balance,
-                                                  size: 24,
-                                                  color: scheme.onSurfaceVariant,
-                                                );
-                                              },
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                bank["name"]!,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: scheme.outlineVariant),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(color: scheme.primary, width: 2),
+                                    ),
                                   ),
-                                ],
-                              ),
-                              SizedBox(height: isSmallScreen ? 16 : 24),
-                            ],
+                                  onChanged: (String? newValue) {
+                                    setState(() {
+                                      selectedBank = newValue!;
+                                    });
+                                  },
+                                  items: banks.map((bank) {
+                                    return DropdownMenuItem<String>(
+                                      value: bank["name"],
+                                      child: Row(
+                                        children: [
+                                          Image.asset(
+                                            bank["logo"]!,
+                                            width: 24,
+                                            height: 24,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return Icon(
+                                                Icons.account_balance,
+                                                size: 24,
+                                                color: scheme.onSurfaceVariant,
+                                              );
+                                            },
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              bank["name"]!,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ),
 
-                            // Action Button (varies by mode)
+                            SizedBox(height: isSmallScreen ? 16 : 24),
+
+                            // Read Transactions Button
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
-                                onPressed: isLoading ? null : _handleActionButton,
+                                onPressed: isLoading ? null : _readTransactions,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: scheme.primary,
                                   foregroundColor: scheme.onPrimary,
@@ -377,30 +442,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 )
                                     : Text(
-                                  selectedMode == ScanMode.smsScan
-                                      ? 'Read My Transactions'
-                                      : 'Upload Bank Statement',
+                                  'Read My Transactions',
                                   style: TextStyle(
                                     fontSize: isSmallScreen ? 14 : 16,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              ),
-                            ),
-
-                            SizedBox(height: isSmallScreen ? 12 : 16),
-
-                            // Back button to change mode
-                            TextButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  selectedMode = null;
-                                });
-                              },
-                              icon: Icon(Icons.arrow_back, size: 18),
-                              label: Text('Change Mode'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: scheme.onSurfaceVariant,
                               ),
                             ),
 
@@ -434,9 +481,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 .onPrimaryContainer
                                                 .withOpacity(0.12),
                                             child: Icon(
-                                              selectedMode == ScanMode.smsScan
-                                                  ? Icons.sms_outlined
-                                                  : Icons.picture_as_pdf,
+                                              Icons.sms_outlined,
                                               size: isSmallScreen ? 28 : 36,
                                               color: Theme.of(context)
                                                   .colorScheme
@@ -445,9 +490,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           ),
                                           SizedBox(height: isSmallScreen ? 12 : 16),
                                           Text(
-                                            selectedMode == ScanMode.smsScan
-                                                ? 'This app reads your SMS messages to analyze UPI transactions.'
-                                                : 'Upload your bank statement PDF for accurate transaction analysis.',
+                                            'This app reads your SMS messages to analyze UPI transactions.',
                                             textAlign: TextAlign.center,
                                             style: TextStyle(
                                               fontSize: isSmallScreen ? 14 : 16,
@@ -505,19 +548,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Handle action button based on selected mode
-  Future<void> _handleActionButton() async {
-    if (selectedMode == ScanMode.smsScan) {
-      await _readTransactions();
-    } else if (selectedMode == ScanMode.statementScan) {
-      // TODO: Implement PDF analysis in Phase 3
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PDF analysis coming soon')),
-      );
-    }
-  }
-
-  /// Manual read transactions (when user clicks the button for SMS Scan)
+  /// Manual read transactions (when user clicks the button)
   Future<void> _readTransactions() async {
     // Store the selected bank
     await _storeBankPreference(selectedBank);
@@ -564,264 +595,10 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } else {
-      _showPermissionDialog();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('SMS permission is required')),
+      );
     }
-  }
-
-  /// Build mode selection UI
-  Widget _buildModeSelection() {
-    final scheme = Theme.of(context).colorScheme;
-    final screenSize = MediaQuery.of(context).size;
-    final screenHeight = screenSize.height;
-    final screenWidth = screenSize.width;
-    final isSmallScreen = screenHeight < 600;
-    final isVerySmallScreen = screenHeight < 500;
-
-    final horizontalPadding = screenWidth * 0.08;
-    final verticalPadding = isSmallScreen ? 16.0 : screenHeight * 0.05;
-    final titleFontSize = isVerySmallScreen ? 28.0 : (isSmallScreen ? 32.0 : 55.0);
-    final cardRadius = screenWidth * 0.04;
-
-    return SafeArea(
-      child: Scaffold(
-        body: Stack(
-          children: [
-            // Subtle purple gradient background
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Theme.of(context).colorScheme.primary.withOpacity(0.06),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(
-                vertical: verticalPadding,
-                horizontal: horizontalPadding,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(height: isSmallScreen ? 16 : 32),
-
-                    // App Title
-                    Align(
-                      alignment: Alignment.center,
-                      child: RichText(
-                        textAlign: TextAlign.center,
-                        text: TextSpan(
-                          style: TextStyle(
-                            fontSize: titleFontSize,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          children: [
-                            TextSpan(
-                              text: 'X',
-                              style: TextStyle(
-                                fontFamily: 'BagelFatOne',
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'pense',
-                              style: TextStyle(
-                                fontFamily: 'CherryBombOne',
-                                fontWeight: FontWeight.w100,
-                                color: Theme.of(context).colorScheme.onBackground,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'E',
-                              style: TextStyle(
-                                fontFamily: 'BagelFatOne',
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'z',
-                              style: TextStyle(
-                                fontFamily: 'CherryBombOne',
-                                fontWeight: FontWeight.w100,
-                                color: Theme.of(context).colorScheme.onBackground,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Text(
-                      'Your money\'s mirror',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontSize: isSmallScreen ? 14 : null,
-                      ),
-                    ),
-                    SizedBox(height: isSmallScreen ? 32 : 48),
-
-                    // Mode Selection Title
-                    // Text(
-                    //   'Choose Analysis Mode',
-                    //   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    //     fontWeight: FontWeight.w600,
-                    //     fontSize: isSmallScreen ? 18 : 20,
-                    //   ),
-                    // ),
-                    // SizedBox(height: isSmallScreen ? 8 : 12),
-
-
-                    // Mode Selection Cards - Horizontal on larger screens, vertical on small
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final useHorizontal = !isSmallScreen && constraints.maxWidth > 600;
-                        final cardWidth = useHorizontal 
-                            ? (constraints.maxWidth - horizontalPadding * 2 - 16) / 2 
-                            : double.infinity;
-                        final cardHeight = isSmallScreen ? 180.0 : 220.0;
-
-                        return useHorizontal
-                            ? Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Expanded(
-                                    child: _buildModeCard(
-                                      mode: ScanMode.smsScan,
-                                      title: 'SMS Scan',
-                                      description: 'Quick offline expense snapshot',
-                                      icon: Icons.sms_outlined,
-                                      cardWidth: cardWidth,
-                                      cardHeight: cardHeight,
-                                    ),
-                                  ),
-                                  SizedBox(width: 16),
-                                  Expanded(
-                                    child: _buildModeCard(
-                                      mode: ScanMode.statementScan,
-                                      title: 'Statement Scan',
-                                      description: 'One statement. Full clarity',
-                                      icon: Icons.picture_as_pdf,
-                                      cardWidth: cardWidth,
-                                      cardHeight: cardHeight,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Column(
-                                children: [
-                                  _buildModeCard(
-                                    mode: ScanMode.smsScan,
-                                    title: 'SMS Scan',
-                                    description: 'Quick offline expense snapshot',
-                                    icon: Icons.sms_outlined,
-                                    cardWidth: cardWidth,
-                                    cardHeight: cardHeight,
-                                  ),
-                                  SizedBox(height: 16),
-                                  _buildModeCard(
-                                    mode: ScanMode.statementScan,
-                                    title: 'Statement Scan',
-                                    description: 'One statement. Full clarity',
-                                    icon: Icons.picture_as_pdf,
-                                    cardWidth: cardWidth,
-                                    cardHeight: cardHeight,
-                                  ),
-                                ],
-                              );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              right: screenWidth * 0.04,
-              top: screenHeight * 0.02,
-              child: _ThemeFab(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build a mode selection card with consistent styling
-  Widget _buildModeCard({
-    required ScanMode mode,
-    required String title,
-    required String description,
-    required IconData icon,
-    required double cardWidth,
-    required double cardHeight,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final isSmallScreen = MediaQuery.of(context).size.height < 600;
-
-    return Container(
-      width: cardWidth,
-      height: cardHeight,
-      child: Card(
-        elevation: 0,
-        color: scheme.primaryContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              selectedMode = mode;
-            });
-          },
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: EdgeInsets.all(isSmallScreen ? 20 : 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Icon with background
-                CircleAvatar(
-                  radius: isSmallScreen ? 32 : 40,
-                  backgroundColor: scheme.onPrimaryContainer.withOpacity(0.12),
-                  child: Icon(
-                    icon,
-                    size: isSmallScreen ? 28 : 36,
-                    color: scheme.onPrimaryContainer,
-                  ),
-                ),
-                SizedBox(height: isSmallScreen ? 12 : 16),
-                // Title
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: isSmallScreen ? 18 : 20,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onPrimaryContainer,
-                  ),
-                ),
-                SizedBox(height: isSmallScreen ? 4 : 8),
-                // Description
-                Text(
-                  description,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: isSmallScreen ? 12 : 14,
-                    color: scheme.onPrimaryContainer.withOpacity(0.9),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 
